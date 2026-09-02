@@ -1,24 +1,23 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 import main
 import os
 
 app = Flask(__name__)
 
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    datos = request.get_json()
-    
-    if datos and 'telefono' in datos and 'texto' in datos:
-        telefono = datos['telefono']
-        texto = datos['texto']
-        
-        # Procesamos con la lógica de main.py
-        respuesta_texto = main.recibir_mensaje(telefono, texto)
-        
-        # Retornamos la respuesta al puente en JS
-        return jsonify({"respuesta": respuesta_texto}), 200
-
-    return jsonify({"error": "Datos no válidos"}), 400
+@app.route('/')
+@app.route('/qr')
+def ver_qr():
+    if os.path.exists('qr.png'):
+        return send_file('qr.png', mimetype='image/png')
+    return """
+    <html>
+        <head><meta http-equiv="refresh" content="5"></head>
+        <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
+            <h2>Bot de WhatsApp</h2>
+            <p>Generando código QR... La página se recargará en 5 segundos.</p>
+        </body>
+    </html>
+    """
 
 if __name__ == "__main__":
     # Fijamos Flask localmente en el puerto 5000 para la comunicación con el bridge
