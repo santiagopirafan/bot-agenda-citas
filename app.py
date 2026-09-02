@@ -3,8 +3,11 @@ import os
 
 app = Flask(__name__)
 
+# Definimos el puerto antes de todo
+PORT = int(os.environ.get('PORT', 8080))
+
 # -------------------------------------------------------------
-# 1. RUTA PARA MOSTRAR EL QR (CÓDIGO NUEVO)
+# 1. RUTA PARA MOSTRAR EL QR
 # -------------------------------------------------------------
 @app.route('/')
 @app.route('/qr')
@@ -22,18 +25,21 @@ def ver_qr():
     """
 
 # -------------------------------------------------------------
-# 2. TU RUTA DEL WEBHOOK (TU CÓDIGO ACTUAL)
+# 2. RUTA DEL WEBHOOK PARA WHATSAPP
 # -------------------------------------------------------------
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    datos = request.get_json()
-    # AQUÍ MANTIENES TODA TU LÓGICA ORIGINAL DEL BOT
-    # (por ejemplo: procesar citas, respuestas, etc.)
-    return jsonify({"respuesta": "Mensaje procesado"})
+    datos = request.get_json() or {}
+    telefono = datos.get('telefono', '')
+    texto = datos.get('texto', '')
+
+    # Aquí procesas tu lógica de negocio / citas
+    print(f"Mensaje recibido de {telefono}: {texto}")
+
+    return jsonify({"respuesta": "Mensaje procesado correctamente"})
 
 # -------------------------------------------------------------
-# 3. ARRANQUE DEL SERVIDOR EN RAILWAY (CÓDIGO ACTUALIZADO)
+# 3. ARRANQUE DEL SERVIDOR PARA RAILWAY
 # -------------------------------------------------------------
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=PORT)
