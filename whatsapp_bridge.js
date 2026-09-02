@@ -1,38 +1,41 @@
 const wppconnect = require('@wppconnect-team/wppconnect');
-const qrcodeTerminal = require('qrcode-terminal');
 const axios = require('axios');
 const http = require('http');
 
-// 1. Servidor de salud para que Render no suspenda el despliegue
+let currentQrCode = null; // Guardará la imagen QR más reciente
+
+// Servidor de salud y visualizador de QR en el navegador
 const PORT = process.env.PORT || 10000;
 http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Bot de WhatsApp activo.\n');
+    if (req.url === '/qr' && currentQrCode) {
+        // Muestra la imagen QR limpia directamente en el navegador
+        const img = Buffer.from(currentQrCode.replace(/^data:image\/png;base64,/, ''), 'base64');
+        res.writeHead(200, {
+            'Content-Type': 'image/png',
+            'Content-Length': img.length
+        });
+        res.end(img);
+    } else {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(`
+            <h2>Bot de WhatsApp Activo</h2>
+            <p>Para ver/escanear el QR actual entra a: <a href="/qr" target="_blank">/qr</a></p>
+        `);
+    }
 }).listen(PORT, () => {
-    console.log(`🌐 Servidor de salud escuchando en puerto ${PORT}`);
+    console.log(`🌐 Servidor activo en puerto ${PORT}`);
 });
 
-// 2. Cliente WPPConnect
 wppconnect.create({
     session: 'bot-citas',
     autoClose: 0,
     logQR: false,
-    catchQR: (base64Qrimg, asciiQR) => {
-        console.log('\n==================================================');
-        console.log('👇 ESCANEA ESTE CÓDIGO QR CON TU WHATSAPP 👇');
-        console.log('==================================================\n');
-
-        if (asciiQR) {
-            // Imprime directamente el formato ASCII nativo que envía WPPConnect
-            console.log(asciiQR);
-        } else {
-            // Si solo llega base64, usamos qrcode-terminal en formato pequeño
-            qrcodeTerminal.generate(base64Qrimg, { small: true });
-        }
-
-        console.log('\n==================================================\n');
+    catchQR: (base64Qrimg) => {
+        // Guardamos el QR actualizado automáticamente
+        currentQrCode = base64Qrimg;
+        console.log('🔄 ¡Nuevo código QR generado! Míralo en la URL del servicio /qr');
     },
-    statusFind: (statusSession, session) => {
+    statusFind: (statusSession) => {
         console.log('Estado de la sesión:', statusSession);
     },
     puppeteerOptions: {
@@ -45,30 +48,26 @@ wppconnect.create({
             '--no-first-run',
             '--no-zygote',
             '--single-process',
-            '--disable-gpu',
-            '--memory-pressure-off'
+            '--disable-gpu'
         ]
     }
 })
     .then((client) => start(client))
-    .catch((error) => console.log('Error al iniciar WPPConnect:', error));
+    .catch((err) => console.log('Error en WPPConnect:', err));
 
 function start(client) {
     console.log('✅ ¡WhatsApp vinculado e iniciado con éxito!');
+    currentQrCode = null; // Limpiamos el QR al iniciar sesión
 
     client.onMessage(async (message) => {
-        console.log(`📩 [LOG BRUTO] Mensaje capturado de: ${message.from}`);
-
         if (!message.isGroupMsg && message.body) {
             const telefono = message.from.replace(/@c\.us|@s\.whatsapp\.net/g, '');
-            const texto = message.body;
-
-            console.log(`📩 Procesando mensaje de ${telefono}: "${texto}"`);
+            console.log(`📩 Mensaje de ${telefono}: "${message.body}"`);
 
             try {
                 const response = await axios.post('http://127.0.0.1:5000/webhook', {
                     telefono: telefono,
-                    texto: texto
+                    texto: message.body
                 });
 
                 if (response.data && response.data.respuesta) {
