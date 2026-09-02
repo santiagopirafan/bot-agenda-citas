@@ -2,6 +2,9 @@ const wppconnect = require('@wppconnect-team/wppconnect');
 const axios = require('axios');
 const fs = require('fs');
 
+// Obtiene el puerto asignado dinámicamente por Railway (o usa 8080 por defecto)
+const PORT = process.env.PORT || 8080;
+
 wppconnect.create({
     session: 'bot-citas',
     autoClose: 0,
@@ -27,7 +30,6 @@ wppconnect.create({
             '--disable-accelerated-2d-canvas',
             '--no-first-run',
             '--no-zygote',
-            '--single-process',
             '--disable-gpu'
         ]
     }
@@ -45,7 +47,8 @@ function start(client) {
             console.log(`📩 Mensaje de ${telefono}: "${message.body}"`);
 
             try {
-                const response = await axios.post('http://127.0.0.1:5000/webhook', {
+                // Se conecta dinámicamente al puerto activo de Flask dentro del contenedor
+                const response = await axios.post(`http://127.0.0.1:${PORT}/webhook`, {
                     telefono: telefono,
                     texto: message.body
                 });
