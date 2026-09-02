@@ -1,12 +1,12 @@
 # Usamos una imagen base oficial de Node con Debian Linux
-FROM node:20gi-slim
+FROM node:20-slim
 
 # Instalar Python, pip, Chromium y dependencias necesarias para Puppeteer
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     python3-venv \
-    chromium \
+    chromium \  
     fonts-liberation \
     libasound2 \
     libatk-bridge2.0-0 \
