@@ -1,9 +1,12 @@
 from flask import Flask, send_file, request, jsonify
 import os
 
+# Importamos la función de lógica principal desde main.py
+from main import recibir_mensaje
+
 app = Flask(__name__)
 
-# Definimos el puerto antes de todo
+# Puerto asignado dinámicamente por el entorno
 PORT = int(os.environ.get('PORT', 8080))
 
 # -------------------------------------------------------------
@@ -13,7 +16,10 @@ PORT = int(os.environ.get('PORT', 8080))
 @app.route('/qr')
 def ver_qr():
     if os.path.exists('qr.png'):
-        return send_file('qr.png', mimetype='image/png')
+        response = send_file('qr.png', mimetype='image/png')
+        # Desactiva la caché para cargar el QR más reciente
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        return response
     return """
     <html>
         <head><meta http-equiv="refresh" content="5"></head>
@@ -33,10 +39,9 @@ def webhook():
     telefono = datos.get('telefono', '')
     texto = datos.get('texto', '')
 
-    # Aquí procesas tu lógica de negocio / citas
-    print(f"Mensaje recibido de {telefono}: {texto}")
+    respuesta_bot = recibir_mensaje(telefono, texto)
 
-    return jsonify({"respuesta": "Mensaje procesado correctamente"})
+    return jsonify({"respuesta": respuesta_bot})
 
 # -------------------------------------------------------------
 # 3. ARRANQUE DEL SERVIDOR PARA RAILWAY

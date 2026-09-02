@@ -22,6 +22,7 @@ wppconnect.create({
         }
     },
     puppeteerOptions: {
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
         userDataDir: './tokens/bot-citas',
         args: [
             '--no-sandbox',

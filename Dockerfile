@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     python3-venv \
-    chromium \  
+    chromium \
     fonts-liberation \
     libasound2 \
     libatk-bridge2.0-0 \
@@ -63,5 +63,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copiar todo el código del proyecto
 COPY . .
 
-# Comando para arrancar ambos procesos de fondo
-CMD python3 app.py & node whatsapp_bridge.js
+# Comando para arrancar ambos procesos
+CMD python3 main.py & node whatsapp_bridge.js
