@@ -1,0 +1,6 @@
+venv/
+node_modules/
+tokens/
+*.sqlite3
+credentials.json
+token.json
