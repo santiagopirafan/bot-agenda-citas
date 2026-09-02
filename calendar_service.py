@@ -1,3 +1,4 @@
+from googleapiclient.errors import HttpError
 from datetime import datetime, timedelta
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -54,7 +55,7 @@ def eliminar_evento(event_id):
     servicio = obtener_servicio()
     try:
         servicio.events().delete(
-            calendarId= 'santipirafan1@gmail.com',
+            calendarId= 'CALENDAR_ID',
             eventId=event_id
         ).execute()
         return True
@@ -78,7 +79,7 @@ def esta_disponible(fecha_str, hora_str, duracion_minutos=30):
     fin_iso = fin_dt.strftime("%Y-%m-%dT%H:%M:%S-05:00")
 
     eventos_result = servicio.events().list(
-        calendarId=CALENDAR_ID,
+        calendarId= 'CALENDAR_ID',
         timeMin=inicio_iso,
         timeMax=fin_iso,
         singleEvents=True,
