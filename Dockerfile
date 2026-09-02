@@ -1,5 +1,5 @@
 # Usamos una imagen base oficial de Node con Debian Linux
-FROM node:18-slim
+FROM node:20gi-slim
 
 # Instalar Python, pip, Chromium y dependencias necesarias para Puppeteer
 RUN apt-get update && apt-get install -y \
