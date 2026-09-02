@@ -7,8 +7,9 @@
         "start": "node whatsapp_bridge.js"
     },
     "dependencies": {
-        "@wppconnect-team/wppconnect": "^1.35.0",
+        "@wppconnect-team/wppconnect": "^2.3.1",
         "axios": "^1.7.0",
-        "express": "^4.19.0"
+        "express": "^4.19.0",
+        "qrcode-terminal": "^0.12.0"
     }
 }
