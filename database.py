@@ -71,7 +71,7 @@ def eliminar_cita(telefono):
 
     return f"tu {telefono} fue eliminada correctamente"
 
-print(eliminar_cita(1))
+
 
 
 
