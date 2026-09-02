@@ -2,25 +2,17 @@ const wppconnect = require('@wppconnect-team/wppconnect');
 const qrcode = require('qrcode-terminal');
 const axios = require('axios');
 
-// Tomamos dinámicamente el puerto de la variable de entorno PORT o usamos 5000 por defecto
-const PORT = process.env.PORT || 5000;
-
 wppconnect.create({
     session: 'bot-citas',
     autoClose: 0,
-    logQR: false, // Desactivamos el logger interno para dibujarlo manualmente sin fallos
-    catchQR: (base64Qrimg, asciiQR) => {
+    logQR: false, // Desactivamos el logger interno para evitar el formato gigante
+    catchQR: (base64Qrimg) => {
         console.log('\n==================================================');
         console.log('👇 ESCANEA ESTE CÓDIGO QR CON TU WHATSAPP 👇');
         console.log('==================================================\n');
 
-        // Si asciiQR llega definido lo usa, de lo contrario forzamos la renderización
-        if (asciiQR) {
-            console.log(asciiQR);
-        } else {
-            // Convierte la imagen base64 a un código QR impreso en la consola de Render
-            qrcode.generate(base64Qrimg, { small: true });
-        }
+        // Forzamos la generación en formato pequeño para que no se rompa en los logs de Render
+        qrcode.generate(base64Qrimg, { small: true });
 
         console.log('\n==================================================\n');
     },
@@ -61,8 +53,8 @@ function start(client) {
             console.log(`📩 Procesando mensaje de ${telefono}: "${texto}"`);
 
             try {
-                // Petición HTTP a Flask usando el puerto dinámico local
-                const response = await axios.post(`http://127.0.0.1:${PORT}/webhook`, {
+                // Petición HTTP directa a Flask en su puerto interno local 5000
+                const response = await axios.post('http://127.0.0.1:5000/webhook', {
                     telefono: telefono,
                     texto: texto
                 });
