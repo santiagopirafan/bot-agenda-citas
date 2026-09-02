@@ -19,6 +19,6 @@ def ver_qr():
     """
 
 if __name__ == '__main__':
-    # Railway asigna el puerto mediante la variable PORT automáticamente
+    # Lee el puerto que asigna Railway dinámicamente y escucha en todas las interfaces (0.0.0.0)
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port)
