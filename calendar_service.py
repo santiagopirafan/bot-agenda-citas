@@ -51,38 +51,41 @@ def crear_evento_calendar(paciente, fecha_str, hora_str, duracion_minutos=30):
 
 # En calendar_service.py
 def eliminar_evento(event_id):
+    servicio = obtener_servicio()
+    try:
+        servicio.events().delete(
+            calendarId= 'santipirafan1@gmail.com',
+            eventId=event_id
+        ).execute()
+        return True
+    except HttpError as e:
+        # Si el evento no existe (404/410), continuamos normalmente
+        if e.resp.status in [404, 410]:
+            return True
+        raise e
 
-    service = obtener_servicio()
-    # Llama a la API de Google usando el ID del evento
-    service.events().delete(
-        calendarId='santipirafan1@gmail.com',
-        eventId = event_id
-    ).execute()
-
-def esta_disponible(fecha_str, hora_str):
+def esta_disponible(fecha_str, hora_str, duracion_minutos=30):
     """
-    Verifica si hay un evento agendado en la fecha y hora indicadas en la zona horaria local.
+    Verifica si hay un evento agendado en la fecha y hora indicadas.
     """
     servicio = obtener_servicio()
     
-    # 1. Definimos el inicio y fin de la cita (asumiendo 1 hora de duración)
-    inicio_iso = f"{fecha_str}T{hora_str}:00-05:00"  # -05:00 corresponde a la hora de Colombia/Perú (America/Bogota)
-    
-    hora_int = int(hora_str.split(":")[0])
-    fin_iso = f"{fecha_str}T{hora_int + 1:02d}:{hora_str.split(':')[1]}:00-05:00"
+    inicio_dt = datetime.strptime(f"{fecha_str} {hora_str}", "%Y-%m-%d %H:%M")
+    fin_dt = inicio_dt + timedelta(minutes=duracion_minutos)
 
-    # 2. Consultamos a Google Calendar especificando la búsqueda exacta
+    # Formateamos con el offset explícito para America/Bogota (-05:00)
+    inicio_iso = inicio_dt.strftime("%Y-%m-%dT%H:%M:%S-05:00")
+    fin_iso = fin_dt.strftime("%Y-%m-%dT%H:%M:%S-05:00")
+
     eventos_result = servicio.events().list(
-        calendarId='santipirafan1@gmail.com',
+        calendarId=CALENDAR_ID,
         timeMin=inicio_iso,
         timeMax=fin_iso,
         singleEvents=True,
-        timeZone='America/Bogota'  # Aseguramos la misma zona horaria
+        timeZone='America/Bogota'
     ).execute()
 
     eventos = eventos_result.get('items', [])
-    
-    # Si la lista tiene eventos (len > 0), no está disponible
     return len(eventos) == 0
 
 def obtener_horarios_disponibles(fecha_str):

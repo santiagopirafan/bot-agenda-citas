@@ -1,8 +1,14 @@
 # Usamos una imagen base oficial de Node con Debian Linux
 FROM node:20-slim
 
-# Instalar Python, pip, Chromium y dependencias necesarias para Puppeteer
-RUN apt-get update && apt-get install -y \
+# Evita que Python genere archivos .pyc y fuerza la salida de logs en consola
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
+# Instalar Python, pip, venv, Chromium y dependencias de sistema
+RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     python3-venv \
@@ -44,24 +50,27 @@ RUN apt-get update && apt-get install -y \
     xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Indicar a Puppeteer que use el Chromium instalado en el sistema
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
-
 # Directorio de trabajo
 WORKDIR /app
 
-# Copiar archivos de dependencias e instalarlas
+# Crear y activar entorno virtual de Python
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copiar e instalar dependencias de Python
+COPY requirements.txt ./
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copiar e instalar dependencias de Node
 COPY package*.json ./
 RUN npm install
 
-COPY requirements.txt ./
-RUN python3 -m venv /app/venv
-ENV PATH="/app/venv/bin:$PATH"
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copiar todo el código del proyecto
+# Copiar el resto del código
 COPY . .
 
-# Comando para arrancar ambos procesos
-CMD python3 main.py & node whatsapp_bridge.js
+# Expone el puerto donde corre la aplicación Flask/Node
+EXPOSE 5000 8080
+
+# Arranca de forma segura ambos servicios y redirige la salida a logs
+CMD ["sh", "-c", "python3 app.py & node whatsapp_bridge.js"]

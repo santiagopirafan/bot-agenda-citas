@@ -2,15 +2,19 @@ const wppconnect = require('@wppconnect-team/wppconnect');
 const axios = require('axios');
 const fs = require('fs');
 
-// Obtiene el puerto asignado dinámicamente por Railway (o usa 8080 por defecto)
-const PORT = process.env.PORT || 8080;
+// Puerto donde corre la app de Python/Flask (5000 por defecto en local/Oracle)
+const FLASK_PORT = process.env.FLASK_PORT || process.env.PORT || 5000;
+
+// Garantiza que la carpeta para guardar la sesión exista
+if (!fs.existsSync('./tokens')) {
+    fs.mkdirSync('./tokens', { recursive: true });
+}
 
 wppconnect.create({
     session: 'bot-citas',
     autoClose: 0,
     logQR: false,
     catchQR: (base64Qrimg) => {
-        // Guarda la imagen del QR físicamente en disco para que Flask la sirva
         const base64Data = base64Qrimg.replace(/^data:image\/png;base64,/, '');
         fs.writeFileSync('qr.png', base64Data, 'base64');
         console.log('🔄 ¡Nuevo QR guardado en qr.png!');
@@ -31,7 +35,8 @@ wppconnect.create({
             '--disable-accelerated-2d-canvas',
             '--no-first-run',
             '--no-zygote',
-            '--disable-gpu'
+            '--disable-gpu',
+            '--single-process'
         ]
     }
 })
@@ -48,8 +53,7 @@ function start(client) {
             console.log(`📩 Mensaje de ${telefono}: "${message.body}"`);
 
             try {
-                // Se conecta dinámicamente al puerto activo de Flask dentro del contenedor
-                const response = await axios.post(`http://127.0.0.1:${PORT}/webhook`, {
+                const response = await axios.post(`http://127.0.0.1:${FLASK_PORT}/webhook`, {
                     telefono: telefono,
                     texto: message.body
                 });
