@@ -1,5 +1,4 @@
-from flask import Flask, request, jsonify, send_file
-import main
+from flask import Flask, send_file, request, jsonify
 import os
 
 app = Flask(__name__)
@@ -19,6 +18,7 @@ def ver_qr():
     </html>
     """
 
-if __name__ == "__main__":
-    # Fijamos Flask localmente en el puerto 5000 para la comunicación con el bridge
-    app.run(host="127.0.0.1", port=5000)
+if __name__ == '__main__':
+    # Railway asigna el puerto mediante la variable PORT automáticamente
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port)
