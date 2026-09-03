@@ -66,7 +66,7 @@ def verificar_webhook():
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """
-    Procesa las notificaciones entrantes de mensajes enviados por los usuarios.
+    Procesa las notificaciones entrantes de mensajes enviados por los usuarios en WhatsApp.
     """
     data = request.get_json() or {}
 
@@ -105,10 +105,52 @@ def webhook():
                             enviar_mensaje_meta(telefono, respuesta_bot)
 
     except Exception as e:
-        print(f"[ERROR PROCESANDO WEBHOOK] {e}")
+        print(f"[ERROR PROCESANDO WEBHOOK META] {e}")
 
     # Meta requiere siempre una respuesta 200 OK inmediata
     return jsonify({"status": "success"}), 200
+
+@app.route('/wompi-webhook', methods=['POST'])
+def wompi_webhook():
+    """
+    Endpoint para recibir las notificaciones de pago en segundo plano enviadas por Wompi.
+    """
+    data = request.get_json() or {}
+    print(f"[WOMPI EVENT] Evento recibido: {data}")
+
+    try:
+        event = data.get('event')
+        
+        if event == 'transaction.updated':
+            transaction = data.get('data', {}).get('transaction', {})
+            status = transaction.get('status')
+            reference = transaction.get('reference')  # Referencia o teléfono del cliente
+
+            if status == 'APPROVED':
+                print(f"[WOMPI] ¡Pago APROBADO! Referencia/Teléfono: {reference}")
+                
+                # Enviar mensaje de confirmación directa al cliente por WhatsApp
+                if reference:
+                    mensaje_exito = (
+                        "✅ *¡Pago recibido exitosamente!*\n\n"
+                        "Tu cita ha sido confirmada y registrada en nuestro sistema. "
+                        "¡Te esperamos!"
+                    )
+                    enviar_mensaje_meta(reference, mensaje_exito)
+
+            elif status == 'DECLINED':
+                print(f"[WOMPI] Pago RECHAZADO. Referencia/Teléfono: {reference}")
+                if reference:
+                    mensaje_rechazo = (
+                        "❌ Tu pago no pudo ser procesado. "
+                        "Por favor, intenta nuevamente utilizando el enlace enviado."
+                    )
+                    enviar_mensaje_meta(reference, mensaje_rechazo)
+
+    except Exception as e:
+        print(f"[ERROR PROCESANDO WEBHOOK WOMPI] {e}")
+
+    return jsonify({"status": "received"}), 200
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=PORT, debug=False)
