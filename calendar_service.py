@@ -17,7 +17,14 @@ def obtener_servicio():
     google_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
     
     if google_json_env:
+        # Reemplazar posibles saltos de línea mal formateados en Render
+        google_json_env = google_json_env.replace('\\n', '\n')
         info = json.loads(google_json_env)
+        
+        # Corregir la clave privada si los saltos de línea se escaparon doblemente
+        if "private_key" in info and isinstance(info["private_key"], str):
+            info["private_key"] = info["private_key"].replace('\\n', '\n')
+
         credenciales = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
     elif os.path.exists(CREDENTIALS_FILE):
         credenciales = service_account.Credentials.from_service_account_file(
