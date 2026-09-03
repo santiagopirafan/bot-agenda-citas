@@ -8,7 +8,7 @@ app = Flask(__name__)
 # Configuración de variables de entorno (Render)
 VERIFY_TOKEN = os.getenv("WEBHOOK_VERIFY_TOKEN", "mi_token_de_verificacion_seguro")
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
-PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
+PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID", "1273112475888341")
 PORT = int(os.environ.get("PORT", 5000))
 
 def enviar_mensaje_meta(telefono, texto):
