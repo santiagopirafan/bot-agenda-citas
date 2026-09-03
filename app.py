@@ -97,7 +97,7 @@ def webhook():
                     if telefono and texto:
                         print(f"[INCOMING] De: {telefono} | Mensaje: '{texto}'")
                         
-                        # 1. Tu lógica actual procesa la respuesta
+                        # 1. Tu lógica procesa la respuesta
                         respuesta_bot = recibir_mensaje(telefono, texto)
                         
                         # 2. Enviar respuesta de regreso a través de Meta API

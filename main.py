@@ -6,7 +6,7 @@ import procesador
 import database 
 import calendar_service 
 from datetime import datetime, timedelta
-import zoneinfo  # Librería nativa de Python 3.9+ para zonas horarias
+import zoneinfo
 import calendar
 
 # Definimos la zona horaria local
@@ -19,7 +19,7 @@ ZONA_HORARIA = zoneinfo.ZoneInfo("America/Bogota")
 
 def es_fecha_valida(texto):
     """
-    Función que intenta convertir un texto al formato estándar de fecha 'YYYY-MM-DD'.
+    Intenta convertir un texto al formato estándar de fecha 'YYYY-MM-DD'.
     """
     try:
         datetime.strptime(texto, "%Y-%m-%d")
@@ -61,16 +61,16 @@ def recibir_mensaje(telefono, texto):
     """
     Función principal que procesa la petición recibida por WhatsApp.
     """
-    # 1. Obtenemos el procesamiento del módulo procesador pasando (telefono, texto)
-    # PRIORIDAD AL PROCESADOR: Administra el flujo por estados y las respuestas numéricas.
+    # 1. Obtenemos el procesamiento del módulo procesador (Manejador de Estados Activos)
     respuesta_procesador = procesador.procesar_mensaje_usuario(telefono, texto)
 
-    # 2. Si el procesador por estados devuelve una respuesta, la retornamos directamente
+    # Si el procesador atendió con éxito un estado activo (ej. seleccionando hora o confirmando cita),
+    # retornamos de inmediato esa respuesta.
     if respuesta_procesador:
         return respuesta_procesador
 
-    # --- FLUJO SECUNDARIO / EVALUACIONES ---
-    saludos = ["hola", "buenas", "buenos dias", "buenas tardes", "buenas noches", "menu", "opciones", "ayuda"]
+    # --- FLUJO SECUNDARIO / EVALUACIONES GENERALES ---
+    saludos = ["hola", "buenas", "buenos dias", "buenas tardes", "buenas noches", "menu", "opciones", "ayuda", "0"]
     texto_limpio = texto.strip().lower()
 
 
@@ -81,34 +81,37 @@ def recibir_mensaje(telefono, texto):
         hoy_str = datetime.now(ZONA_HORARIA).strftime("%Y-%m-%d")
         return (
             "👋 ¡Hola! Bienvenido al sistema de agendamiento de citas médicas.\n\n"
-            "¿En qué te puedo ayudar hoy? Escribe la opción que desees:\n\n"
-            "1️⃣ *Consultar disponibilidad:* Escribe `disponibilidad`\n\n"
-            f"2️⃣ *Agendar cita:* Escribe `agendar YYYY-MM-DD HH:MM Nombre` (Ej: `agendar {hoy_str} 10:00 Carlos Gomez`)\n\n"
-            "3️⃣ *Consultar mis citas:* Escribe `mis citas` o `consultar`\n\n"
-            "4️⃣ *Cancelar cita:* Escribe `cancelar`\n\n"
-            "Escribe una de las opciones para comenzar."
+            "¿En qué te puedo ayudar hoy? Escribe el número o palabra de la opción:\n\n"
+            "1️⃣ *Consultar disponibilidad del mes:* Responde `1` o `disponibilidad`\n\n"
+            "2️⃣ *Consultar mis citas:* Responde `2` o `mis citas`\n\n"
+            "3️⃣ *Cancelar cita:* Responde `3` o `cancelar`\n\n"
+            f"📌 *Para agendar directamente:* Escribe `agendar YYYY-MM-DD HH:MM Nombre`\n"
+            f"*(Ejemplo: agendar {hoy_str} 10:00 Carlos Gomez)*"
         )
 
 
     # ------------------------------------------
-    # EVALUACIÓN 2: PASO 1 - DÍAS DISPONIBLES
+    # EVALUACIÓN 2: PASO 1 - DÍAS DISPONIBLES DEL MES
     # ------------------------------------------
-    elif texto_limpio in ["disponibilidad", "consultar disponibilidad", "ver disponibilidad"]:
+    elif texto_limpio in ["1", "disponibilidad", "consultar disponibilidad", "ver disponibilidad"]:
         dias_disponibles = obtener_proximos_dias() 
         
         if not dias_disponibles:
-            return "⚠️ En este momento no hay días con disponibilidad próxima."
+            return "⚠️ En este momento no hay días con disponibilidad para este mes."
 
         mensaje_dias = "📅 *Días disponibles para agendar este mes:*\n\n"
         for idx, dia in enumerate(dias_disponibles, 1):
-            mensaje_dias += f"{idx}️⃣ *{dia['fecha_formateada']}* (Escribe: `{dia['fecha_iso']}`)\n"
+            mensaje_dias += f"• *{dia['fecha_formateada']}*\n"
             
-        mensaje_dias += f"\n👉 *Escribe la fecha del día que prefieres* para ver sus horarios (Ej: `{dias_disponibles[0]['fecha_iso']}`)."
+        mensaje_dias += (
+            f"\n👉 *Escribe la fecha que prefieres* en formato `YYYY-MM-DD` para ver los horarios libres."
+            f"\n*(Ejemplo: `{dias_disponibles[0]['fecha_iso']}`)*"
+        )
         return mensaje_dias
 
 
     # ------------------------------------------
-    # EVALUACIÓN 3: PASO 2 - HORAS DEL DÍA
+    # EVALUACIÓN 3: PASO 2 - HORAS DEL DÍA SELECCIONADO
     # ------------------------------------------
     elif es_fecha_valida(texto_limpio):
         fecha_seleccionada = texto_limpio
@@ -134,7 +137,7 @@ def recibir_mensaje(telefono, texto):
     # ------------------------------------------
     # EVALUACIÓN 4: CONSULTAR CITAS
     # ------------------------------------------
-    elif texto_limpio in ["consultar", "mis citas", "consultar cita"]:
+    elif texto_limpio in ["2", "consultar", "mis citas", "consultar cita"]:
         consultar_datos = database.consultar_citas(telefono)
 
         if not consultar_datos:
@@ -151,7 +154,7 @@ def recibir_mensaje(telefono, texto):
     # ------------------------------------------
     # EVALUACIÓN 5: ACCIÓN ELIMINAR / CANCELAR CITA
     # ------------------------------------------
-    elif texto_limpio in ["eliminar", "cancelar", "cancelar cita"]:
+    elif texto_limpio in ["3", "eliminar", "cancelar", "cancelar cita"]:
         datos = database.consultar_citas(telefono)
 
         if not datos:

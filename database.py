@@ -33,6 +33,7 @@ def init_db():
     conn.commit()
     conn.close()
 
+
 def obtener_usuario(telefono):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
@@ -47,6 +48,7 @@ def obtener_usuario(telefono):
             "nombre": row[3]
         }
     return None
+
 
 def guardar_estado_usuario(telefono, estado, datos_temp=None, nombre=None):
     conn = sqlite3.connect(DB_NAME)
@@ -69,6 +71,55 @@ def guardar_estado_usuario(telefono, estado, datos_temp=None, nombre=None):
 
     conn.commit()
     conn.close()
+
+
+# ==========================================
+# FUNCIONES DE GESTIÓN DE CITAS
+# ==========================================
+
+def guardar_cita(telefono, paciente, fecha, hora, event_id=None):
+    """Guarda un registro de cita agendada."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO citas (telefono, paciente, fecha, hora, event_id)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (telefono, paciente, fecha, hora, event_id))
+    conn.commit()
+    conn.close()
+
+
+def consultar_citas(telefono):
+    """Obtiene la última cita registrada asociada al número de teléfono."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT paciente, fecha, hora, event_id 
+        FROM citas 
+        WHERE telefono = ? 
+        ORDER BY id DESC LIMIT 1
+    ''', (telefono,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row:
+        return {
+            "paciente": row[0],
+            "fecha": row[1],
+            "hora": row[2],
+            "event_id": row[3]
+        }
+    return None
+
+
+def eliminar_cita(telefono):
+    """Elimina las citas asociadas a un número de teléfono."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM citas WHERE telefono = ?', (telefono,))
+    conn.commit()
+    conn.close()
+
 
 # Se ejecuta automáticamente al cargar el módulo para prevenir errores
 init_db()

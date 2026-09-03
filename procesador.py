@@ -1,6 +1,7 @@
 from calendar_service import obtener_dias_disponibles, obtener_horas_disponibles, agendar_cita
 from database import obtener_usuario, guardar_estado_usuario
 from config import PRECIO_PRIMERA_CITA, PRECIO_SEGUIMIENTO, LINK_DE_PAGO
+import database
 
 def procesar_mensaje_usuario(telefono, mensaje):
     mensaje_limpio = mensaje.strip().lower()
@@ -34,18 +35,10 @@ def procesar_mensaje_usuario(telefono, mensaje):
                 f"*2.* Cita de Control / Seguimiento (${PRECIO_SEGUIMIENTO:,} COP)\n\n"
                 "_Escribe *0* para cancelar._"
             )
-        elif mensaje_limpio in ['2', 'consultar', 'consultar cita']:
-            return "🔍 *Consulta de citas:* Próximamente disponible."
-        elif mensaje_limpio in ['3', 'eliminar', 'cancelar cita']:
-            return "🗑️ *Cancelar citas:* Próximamente disponible."
         else:
-            return (
-                "👋 ¡Hola! Bienvenido a nuestro servicio de agendamiento.\n\n"
-                "Responde con el número de la opción que deseas:\n"
-                "*1.* Agendar cita\n"
-                "*2.* Consultar cita\n"
-                "*3.* Cancelar cita"
-            )
+            # Si no es la opción de agendar (1), devolvemos None para que main.py
+            # se encargue de procesar los comandos 'consultar', 'cancelar' o saludos.
+            return None
 
     # --- ESTADO 2: SELECCIÓN TIPO DE CITA ---
     elif estado == 'SELECCIONANDO_TIPO':
@@ -53,9 +46,10 @@ def procesar_mensaje_usuario(telefono, mensaje):
             tipo = "Primera Cita" if mensaje_limpio == '1' else "Cita de Seguimiento"
             precio = PRECIO_PRIMERA_CITA if mensaje_limpio == '1' else PRECIO_SEGUIMIENTO
             
-            dias = obtener_dias_disponibles(dias_a_futuro=7)
+            # Ahora llamamos la función del mes completo sin límite de 7 días
+            dias = obtener_dias_disponibles()
             if not dias:
-                return "Lo sentimos, no hay días disponibles en los próximos días."
+                return "Lo sentimos, no hay días disponibles en lo que resta del mes."
 
             datos_temp['tipo_cita'] = tipo
             datos_temp['precio'] = precio
@@ -118,21 +112,32 @@ def procesar_mensaje_usuario(telefono, mensaje):
                 )
         return f"⚠️ Opción no válida. Envía un número del *1 al {len(horas_opciones)}*."
 
-    # --- ESTADO 5: NOMBRE Y ENVÍO DEL LINK DE PAGO ---
+   # --- ESTADO 5: NOMBRE Y ENVÍO DEL LINK DE PAGO ---
     elif estado == 'ESPERANDO_NOMBRE':
         nombre_usuario = mensaje.strip()
         datos_temp['nombre_paciente'] = nombre_usuario
         
-        exito = agendar_cita(
+        # Guardar en Google Calendar
+        event_id = agendar_cita(
             resumen=f"{datos_temp['tipo_cita']} - {nombre_usuario}",
             fecha=datos_temp['fecha_iso'],
             hora_inicio=datos_temp['hora_iso'],
             descripcion=f"Paciente: {nombre_usuario}\nTeléfono: {telefono}"
         )
         
-        guardar_estado_usuario(telefono, 'INICIO', {}, nombre=nombre_usuario)
+        if event_id:
+            # Guardar registro en la base de datos SQLite para consultas/cancelaciones posteriores
+            database.guardar_cita(
+                telefono=telefono,
+                paciente=nombre_usuario,
+                fecha=datos_temp['fecha_str'],
+                hora=datos_temp['hora_str'],
+                event_id=event_id
+            )
 
-        if exito:
+            # Reiniciar estado del usuario
+            guardar_estado_usuario(telefono, 'INICIO', {}, nombre=nombre_usuario)
+
             return (
                 f"✅ *¡Pre-reserva registrada con éxito!*\n\n"
                 f"👤 *Paciente:* {nombre_usuario}\n"
@@ -144,6 +149,4 @@ def procesar_mensaje_usuario(telefono, mensaje):
                 f"¡Te esperamos!"
             )
         else:
-            return "❌ Ocurrió un error al registrar la cita. Por favor escribe *1* para reintentar."
-
-    return "Escribe *1* para ver las opciones principales."
+            return "❌ Ocurrió un error al registrar la cita en la agenda. Por favor escribe *1* para intentar agendar nuevamente."

@@ -1,5 +1,7 @@
 import os
 import json
+import zoneinfo
+import calendar
 from googleapiclient.errors import HttpError
 from datetime import datetime, timedelta
 from google.oauth2 import service_account
@@ -8,6 +10,8 @@ from googleapiclient.discovery import build
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID", "santipirafan1@gmail.com")
 CREDENTIALS_FILE = 'credentials.json'
+ZONA_HORARIA = zoneinfo.ZoneInfo("America/Bogota")
+
 
 def obtener_servicio():
     google_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
@@ -25,21 +29,27 @@ def obtener_servicio():
     return build('calendar', 'v3', credentials=credenciales)
 
 
-def obtener_dias_disponibles(dias_a_futuro=7):
+def obtener_dias_disponibles():
     """
-    Genera la lista de los próximos días de atención (excluyendo domingos).
+    Genera la lista de todos los días del mes actual a partir de hoy,
+    excluyendo únicamente los domingos (weekday 6).
     """
     dias = []
-    hoy = datetime.now()
+    hoy = datetime.now(ZONA_HORARIA)
+    mes_actual = hoy.month
     
-    for i in range(1, dias_a_futuro + 1):
-        fecha = hoy + timedelta(days=i)
-        # Excluimos domingos (weekday 6)
-        if fecha.weekday() != 6:
+    dia_iteracion = hoy
+    while dia_iteracion.month == mes_actual:
+        # Excluir domingos (weekday() == 6)
+        if dia_iteracion.weekday() != 6:
             dias.append({
-                'fecha_iso': fecha.strftime("%Y-%m-%d"),
-                'fecha_str': fecha.strftime("%d/%m/%Y")
+                'fecha_iso': dia_iteracion.strftime("%Y-%m-%d"),
+                'fecha_str': dia_iteracion.strftime("%d/%m/%Y")
             })
+        
+        # Avanzar 1 día
+        dia_iteracion += timedelta(days=1)
+
     return dias
 
 
@@ -82,7 +92,7 @@ def obtener_horas_disponibles(fecha_str):
 
 def agendar_cita(resumen, fecha, hora_inicio, duracion_minutos=30, descripcion=""):
     """
-    Crea el evento en Google Calendar.
+    Crea el evento en Google Calendar y retorna el event_id creado (o None si falla).
     """
     try:
         servicio = obtener_servicio()
@@ -102,14 +112,17 @@ def agendar_cita(resumen, fecha, hora_inicio, duracion_minutos=30, descripcion="
             },
         }
 
-        servicio.events().insert(calendarId=CALENDAR_ID, body=evento).execute()
-        return True
+        evento_creado = servicio.events().insert(calendarId=CALENDAR_ID, body=evento).execute()
+        return evento_creado.get('id')
     except Exception as e:
         print(f"Error agendando cita: {e}")
-        return False
+        return None
 
 
 def eliminar_evento(event_id):
+    """
+    Elimina un evento de Google Calendar mediante su ID.
+    """
     servicio = obtener_servicio()
     try:
         servicio.events().delete(
