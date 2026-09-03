@@ -58,9 +58,14 @@ def recibir_mensaje(telefono, texto):
     """
     Función principal que procesa la petición recibida por WhatsApp.
     """
-    datos_procesados = procesador.procesar_mensaje_usuario(texto)
-    accion = datos_procesados.get("accion") if datos_procesados else None
+    # 1. Obtenemos el procesamiento del módulo procesador pasando (telefono, texto)
+    respuesta_procesador = procesador.procesar_mensaje_usuario(telefono, texto)
 
+    # 2. Si el procesador por estados devuelve una respuesta, la retornamos directamente
+    if respuesta_procesador:
+        return respuesta_procesador
+
+    # --- FLUJO SECUNDARIO / EVALUACIONES ---
     saludos = ["hola", "buenas", "buenos dias", "buenas tardes", "buenas noches", "menu", "opciones", "ayuda"]
     texto_limpio = texto.strip().lower()
 
@@ -68,7 +73,7 @@ def recibir_mensaje(telefono, texto):
     # ------------------------------------------
     # EVALUACIÓN 1: MENÚ PRINCIPAL
     # ------------------------------------------
-    if any(saludo in texto_limpio for saludo in saludos) or accion == "menu":
+    if any(saludo in texto_limpio for saludo in saludos):
         hoy_str = datetime.now(ZONA_HORARIA).strftime("%Y-%m-%d")
         return (
             "👋 ¡Hola! Bienvenido al sistema de agendamiento de citas médicas.\n\n"
@@ -84,7 +89,7 @@ def recibir_mensaje(telefono, texto):
     # ------------------------------------------
     # EVALUACIÓN 2: PASO 1 - DÍAS DISPONIBLES
     # ------------------------------------------
-    elif texto_limpio in ["1", "disponibilidad", "consultar disponibilidad", "ver disponibilidad"] or accion == "disponibilidad":
+    elif texto_limpio in ["1", "disponibilidad", "consultar disponibilidad", "ver disponibilidad"]:
         dias_disponibles = obtener_proximos_dias(dias=5) 
         
         if not dias_disponibles:
@@ -123,51 +128,9 @@ def recibir_mensaje(telefono, texto):
 
 
     # ------------------------------------------
-    # EVALUACIÓN 4: ACCIÓN AGENDAR CITA
+    # EVALUACIÓN 4: CONSULTAR CITAS
     # ------------------------------------------
-    elif accion == "agendar":
-        datos_cita = procesador.extraer_datos_cita(texto)
-
-        if not datos_cita.get("valido"):
-            return datos_cita.get("error")
-
-        try:
-            if not calendar_service.esta_disponible(datos_cita['fecha'], datos_cita['hora']):
-                libres = calendar_service.obtener_horarios_disponibles(datos_cita['fecha'])
-                if libres:
-                    horas_texto = ", ".join(libres)
-                    return (
-                        f"⚠️ El horario de las *{datos_cita['hora']}* para el día *{datos_cita['fecha']}* ya está ocupado.\n\n"
-                        f"📅 *Horarios disponibles para ese día:*\n{horas_texto}\n\n"
-                        f"Por favor, intenta agendar escribiendo una de estas horas disponibles."
-                    )
-                else:
-                    return f"⚠️ El día *{datos_cita['fecha']}* ya no tiene horarios disponibles."
-
-            id_event = calendar_service.crear_evento_calendar(
-                paciente=datos_cita['paciente'],
-                fecha_str=datos_cita['fecha'],
-                hora_str=datos_cita['hora']
-            )
-
-            database.guardar_cita(
-                telefono,
-                datos_cita['paciente'],
-                datos_cita['fecha'],
-                datos_cita['hora'],
-                id_event
-            )
-
-            return f"¡Cita agendada con éxito para {datos_cita['paciente']} el {datos_cita['fecha']} a las {datos_cita['hora']}! 🎉"
-        except Exception as e:
-            print(f"[ERROR CREAR CITA] {e}")
-            return "⚠️ Ocurrió un error al agendar la cita. Por favor intenta de nuevo."
-
-
-    # ------------------------------------------
-    # EVALUACIÓN 5: ACCIÓN CONSULTAR CITAS
-    # ------------------------------------------
-    elif accion == "consultar":
+    elif texto_limpio in ["2", "consultar", "mis citas", "consultar cita"]:
         consultar_datos = database.consultar_citas(telefono)
 
         if not consultar_datos:
@@ -182,9 +145,9 @@ def recibir_mensaje(telefono, texto):
 
 
     # ------------------------------------------
-    # EVALUACIÓN 6: ACCIÓN ELIMINAR / CANCELAR CITA
+    # EVALUACIÓN 5: ACCIÓN ELIMINAR / CANCELAR CITA
     # ------------------------------------------
-    elif accion == "eliminar" or accion == "cancelar":
+    elif texto_limpio in ["3", "eliminar", "cancelar", "cancelar cita"]:
         datos = database.consultar_citas(telefono)
 
         if not datos:
@@ -206,7 +169,7 @@ def recibir_mensaje(telefono, texto):
 
 
     # ------------------------------------------
-    # EVALUACIÓN 7: RESPUESTA POR DEFECTO (FALLBACK)
+    # EVALUACIÓN 6: RESPUESTA POR DEFECTO (FALLBACK)
     # ------------------------------------------
     else:
         return "⚠️ No entendí esa opción. Escribe *Hola* o *Menu* para ver las opciones disponibles."
