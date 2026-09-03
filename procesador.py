@@ -50,6 +50,15 @@ def extraer_datos_cita(mensaje):
             "error": "⚠️ La fecha ingresada no es válida. Usa el formato YYYY-MM-DD (Ej: 2026-09-10)."
         }
 
+    # Validación rápida del formato de hora (HH:MM)
+    try:
+        datetime.strptime(hora, "%H:%M")
+    except ValueError:
+        return {
+            "valido": False,
+            "error": "⚠️ La hora ingresada no es válida. Usa el formato de 24 horas HH:MM (Ej: 09:00 o 14:30)."
+        }
+
     return {
         "valido": True,
         "fecha": fecha,

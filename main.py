@@ -32,7 +32,6 @@ def obtener_proximos_dias(dias=5):
     Genera la lista de próximos días hábiles usando la zona horaria correcta.
     """
     lista_dias = []
-    # Usamos la zona horaria de Bogotá en lugar de la hora del servidor UTC
     hoy = datetime.now(ZONA_HORARIA)
     
     i = 1
@@ -70,11 +69,12 @@ def recibir_mensaje(telefono, texto):
     # EVALUACIÓN 1: MENÚ PRINCIPAL
     # ------------------------------------------
     if any(saludo in texto_limpio for saludo in saludos) or accion == "menu":
+        hoy_str = datetime.now(ZONA_HORARIA).strftime("%Y-%m-%d")
         return (
             "👋 ¡Hola! Bienvenido al sistema de agendamiento de citas médicas.\n\n"
             "¿En qué te puedo ayudar hoy? Escribe la opción que desees:\n\n"
             "1️⃣ *Consultar disponibilidad:* Escribe `disponibilidad`\n\n"
-            "2️⃣ *Agendar cita:* Escribe `agendar YYYY-MM-DD HH:MM Nombre` (Ej: `agendar 2026-09-10 10:00 Carlos Gomez`)\n\n"
+            f"2️⃣ *Agendar cita:* Escribe `agendar YYYY-MM-DD HH:MM Nombre` (Ej: `agendar {hoy_str} 10:00 Carlos Gomez`)\n\n"
             "3️⃣ *Consultar mis citas:* Escribe `mis citas` o `consultar`\n\n"
             "4️⃣ *Cancelar cita:* Escribe `cancelar`\n\n"
             "Escribe una de las opciones para comenzar."
@@ -94,7 +94,7 @@ def recibir_mensaje(telefono, texto):
         for idx, dia in enumerate(dias_disponibles, 1):
             mensaje_dias += f"{idx}️⃣ *{dia['fecha_formateada']}* (Escribe: `{dia['fecha_iso']}`)\n"
             
-        mensaje_dias += "\n👉 *Escribe la fecha del día que prefieres* para ver sus horarios (Ej: `2026-09-10`)."
+        mensaje_dias += f"\n👉 *Escribe la fecha del día que prefieres* para ver sus horarios (Ej: `{dias_disponibles[0]['fecha_iso']}`)."
         return mensaje_dias
 
 
@@ -118,6 +118,7 @@ def recibir_mensaje(telefono, texto):
             else:
                 return f"⚠️ El día *{fecha_seleccionada}* no tiene horarios disponibles. Intenta consultando otra fecha."
         except Exception as e:
+            print(f"[ERROR CALENDAR DISPONIBILIDAD] {e}")
             return "⚠️ Ocurrió un inconveniente al consultar Google Calendar. Inténtalo de nuevo en unos momentos."
 
 
@@ -159,6 +160,7 @@ def recibir_mensaje(telefono, texto):
 
             return f"¡Cita agendada con éxito para {datos_cita['paciente']} el {datos_cita['fecha']} a las {datos_cita['hora']}! 🎉"
         except Exception as e:
+            print(f"[ERROR CREAR CITA] {e}")
             return "⚠️ Ocurrió un error al agendar la cita. Por favor intenta de nuevo."
 
 
@@ -193,7 +195,7 @@ def recibir_mensaje(telefono, texto):
             try:
                 calendar_service.eliminar_evento(event_id)
             except Exception as e:
-                pass  # Si el evento ya no existía en Google Calendar, continúa la eliminación local
+                print(f"[ERROR ELIMINAR CALENDAR] {e}")
 
         database.eliminar_cita(telefono)
 
