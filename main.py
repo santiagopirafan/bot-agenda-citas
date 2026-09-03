@@ -58,7 +58,7 @@ def recibir_mensaje(telefono, texto):
     """
     Función principal que procesa la petición recibida por WhatsApp.
     """
-    datos_procesados = procesador.procesar_opcion_menu(texto)
+    datos_procesados = procesador.procesar_mensaje_usuario(texto)
     accion = datos_procesados.get("accion") if datos_procesados else None
 
     saludos = ["hola", "buenas", "buenos dias", "buenas tardes", "buenas noches", "menu", "opciones", "ayuda"]
