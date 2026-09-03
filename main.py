@@ -7,6 +7,7 @@ import database
 import calendar_service 
 from datetime import datetime, timedelta
 import zoneinfo  # Librería nativa de Python 3.9+ para zonas horarias
+import calendar
 
 # Definimos la zona horaria local
 ZONA_HORARIA = zoneinfo.ZoneInfo("America/Bogota")
@@ -27,26 +28,28 @@ def es_fecha_valida(texto):
         return False
 
 
-def obtener_proximos_dias(dias=5):
+def obtener_proximos_dias(dias=None):
     """
-    Genera la lista de próximos días hábiles usando la zona horaria correcta.
+    Genera la lista de todos los días del mes actual a partir de la fecha de hoy,
+    excluyendo únicamente los domingos.
     """
     lista_dias = []
     hoy = datetime.now(ZONA_HORARIA)
+    mes_actual = hoy.month
     
-    i = 1
-    while len(lista_dias) < dias:
-        dia_futuro = hoy + timedelta(days=i)
-        
-        # Excluimos domingos (weekday() == 6)
-        if dia_futuro.weekday() != 6:
-            nombre_dia = dia_futuro.strftime("%Y-%m-%d")
+    dia_iteracion = hoy
+    while dia_iteracion.month == mes_actual:
+        # Excluir domingos (weekday() == 6)
+        if dia_iteracion.weekday() != 6:
+            fecha_str = dia_iteracion.strftime("%Y-%m-%d")
             lista_dias.append({
-                'fecha_iso': nombre_dia,
-                'fecha_formateada': nombre_dia
+                'fecha_iso': fecha_str,
+                'fecha_formateada': fecha_str
             })
-        i += 1
         
+        # Avanzar 1 día
+        dia_iteracion += timedelta(days=1)
+            
     return lista_dias
 
 
@@ -59,6 +62,7 @@ def recibir_mensaje(telefono, texto):
     Función principal que procesa la petición recibida por WhatsApp.
     """
     # 1. Obtenemos el procesamiento del módulo procesador pasando (telefono, texto)
+    # PRIORIDAD AL PROCESADOR: Administra el flujo por estados y las respuestas numéricas.
     respuesta_procesador = procesador.procesar_mensaje_usuario(telefono, texto)
 
     # 2. Si el procesador por estados devuelve una respuesta, la retornamos directamente
@@ -89,13 +93,13 @@ def recibir_mensaje(telefono, texto):
     # ------------------------------------------
     # EVALUACIÓN 2: PASO 1 - DÍAS DISPONIBLES
     # ------------------------------------------
-    elif texto_limpio in ["1", "disponibilidad", "consultar disponibilidad", "ver disponibilidad"]:
-        dias_disponibles = obtener_proximos_dias(dias=5) 
+    elif texto_limpio in ["disponibilidad", "consultar disponibilidad", "ver disponibilidad"]:
+        dias_disponibles = obtener_proximos_dias() 
         
         if not dias_disponibles:
             return "⚠️ En este momento no hay días con disponibilidad próxima."
 
-        mensaje_dias = "📅 *Días disponibles para agendar:*\n\n"
+        mensaje_dias = "📅 *Días disponibles para agendar este mes:*\n\n"
         for idx, dia in enumerate(dias_disponibles, 1):
             mensaje_dias += f"{idx}️⃣ *{dia['fecha_formateada']}* (Escribe: `{dia['fecha_iso']}`)\n"
             
@@ -130,7 +134,7 @@ def recibir_mensaje(telefono, texto):
     # ------------------------------------------
     # EVALUACIÓN 4: CONSULTAR CITAS
     # ------------------------------------------
-    elif texto_limpio in ["2", "consultar", "mis citas", "consultar cita"]:
+    elif texto_limpio in ["consultar", "mis citas", "consultar cita"]:
         consultar_datos = database.consultar_citas(telefono)
 
         if not consultar_datos:
@@ -147,7 +151,7 @@ def recibir_mensaje(telefono, texto):
     # ------------------------------------------
     # EVALUACIÓN 5: ACCIÓN ELIMINAR / CANCELAR CITA
     # ------------------------------------------
-    elif texto_limpio in ["3", "eliminar", "cancelar", "cancelar cita"]:
+    elif texto_limpio in ["eliminar", "cancelar", "cancelar cita"]:
         datos = database.consultar_citas(telefono)
 
         if not datos:
