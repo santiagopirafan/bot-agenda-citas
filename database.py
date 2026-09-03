@@ -1,69 +1,55 @@
 import sqlite3
-import os
+import json
 
-# Permite override del path de base de datos desde variables de entorno (ideal para Persistent Disk en Render)
-DB_PATH = os.environ.get('DATABASE_PATH', 'database.db')
+DB_NAME = "database.db"
 
-def crear_tabla():
-    conexion = sqlite3.connect(DB_PATH)
-    try:
-        cursor = conexion.cursor()
-        cursor.execute(
-            """CREATE TABLE IF NOT EXISTS citas(
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                telefono TEXT,
-                paciente TEXT,
-                fecha TEXT,
-                hora TEXT,
-                event_id TEXT
-            )"""
+def init_db():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS usuarios (
+            telefono TEXT PRIMARY KEY,
+            estado TEXT DEFAULT 'INICIO',
+            datos_temp TEXT DEFAULT '{}',
+            nombre TEXT
         )
-        conexion.commit()
-    finally:
-        conexion.close()
+    ''')
+    conn.commit()
+    conn.close()
 
-# Se asegura de crear la tabla al importar el módulo
-crear_tabla()
+def obtener_usuario(telefono):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT telefono, estado, datos_temp, nombre FROM usuarios WHERE telefono = ?', (telefono,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return {
+            "telefono": row[0],
+            "estado": row[1],
+            "datos_temp": json.loads(row[2]) if row[2] else {},
+            "nombre": row[3]
+        }
+    return None
 
-def guardar_cita(telefono, paciente, fecha, hora, event_id):
-    conexion = sqlite3.connect(DB_PATH)
-    try:
-        cursor = conexion.cursor()
-        cursor.execute(
-            """INSERT INTO citas (telefono, paciente, fecha, hora, event_id) VALUES (?,?,?,?,?)""",
-            (str(telefono).strip(), paciente, fecha, hora, event_id)
-        )
-        conexion.commit()
-        return f"Tu cita para el paciente {paciente} (Tel: {telefono}) el día {fecha} a las {hora} fue guardada con éxito."
-    finally:
-        conexion.close()
+def guardar_estado_usuario(telefono, estado, datos_temp=None, nombre=None):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    usuario = obtener_usuario(telefono)
+    datos_json = json.dumps(datos_temp) if datos_temp is not None else '{}'
 
-def consultar_citas(telefono):
-    conexion = sqlite3.connect(DB_PATH)
-    conexion.row_factory = sqlite3.Row 
-    try:
-        cursor = conexion.cursor()
-        # Trae la cita más reciente registrada para este número
-        cursor.execute(
-            """SELECT paciente, fecha, hora, event_id FROM citas WHERE telefono = ? ORDER BY id DESC""", 
-            (str(telefono).strip(),)
-        )
-        consulta = cursor.fetchone() 
-        if consulta:
-            return dict(consulta)
-        return None
-    finally:
-        conexion.close()
+    if usuario:
+        cursor.execute('''
+            UPDATE usuarios 
+            SET estado = ?, datos_temp = ?, nombre = COALESCE(?, nombre)
+            WHERE telefono = ?
+        ''', (estado, datos_json, nombre, telefono))
+    else:
+        cursor.execute('''
+            INSERT INTO usuarios (telefono, estado, datos_temp, nombre)
+            VALUES (?, ?, ?, ?)
+        ''', (telefono, estado, datos_json, nombre))
 
-def eliminar_cita(telefono):
-    conexion = sqlite3.connect(DB_PATH)
-    try:
-        cursor = conexion.cursor()
-        cursor.execute(
-            """DELETE FROM citas WHERE telefono = ?""", 
-            (str(telefono).strip(),)
-        )
-        conexion.commit()
-        return f"La cita asociada al teléfono {telefono} fue eliminada correctamente."
-    finally:
-        conexion.close()
+    conn.commit()
+    conn.close()
