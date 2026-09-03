@@ -3,16 +3,18 @@ import requests
 from flask import Flask, request, jsonify
 from main import recibir_mensaje
 import database  # Importamos la base de datos
+import calendar_service # Importación del módulo completo
 
 app = Flask(__name__)
 
 # Aseguramos la creación de tablas al iniciar la aplicación Flask
 database.init_db()
 
-# Configuración de variables de entorno (Render)
+# Configuración de variables de entorno (Render / Hosting)
 VERIFY_TOKEN = os.getenv("WEBHOOK_VERIFY_TOKEN", "mi_token_de_verificacion_seguro")
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID", "1243724885499477")
+LINK_DE_PAGO = os.getenv("LINK_DE_PAGO", "")
 PORT = int(os.environ.get("PORT", 5000))
 
 def enviar_mensaje_meta(telefono, texto):
@@ -124,28 +126,61 @@ def wompi_webhook():
         if event == 'transaction.updated':
             transaction = data.get('data', {}).get('transaction', {})
             status = transaction.get('status')
-            reference = transaction.get('reference')  # Referencia o teléfono del cliente
+            
+            # Extraer teléfono (desde customer_data o la referencia)
+            customer_data = transaction.get('customer_data', {})
+            telefono = customer_data.get('phone_number') or transaction.get('reference')
+            
+            if telefono:
+                telefono = str(telefono).replace('whatsapp:', '').replace('+', '').strip()
 
-            if status == 'APPROVED':
-                print(f"[WOMPI] ¡Pago APROBADO! Referencia/Teléfono: {reference}")
+            if status == 'APPROVED' and telefono:
+                print(f"[WOMPI] ¡Pago APROBADO! Teléfono/Ref: {telefono}")
                 
-                # Enviar mensaje de confirmación directa al cliente por WhatsApp
-                if reference:
-                    mensaje_exito = (
-                        "✅ *¡Pago recibido exitosamente!*\n\n"
-                        "Tu cita ha sido confirmada y registrada en nuestro sistema. "
-                        "¡Te esperamos!"
-                    )
-                    enviar_mensaje_meta(reference, mensaje_exito)
+                # 1. Obtener la cita pendiente guardada previamente en SQLite
+                cita_pendiente = database.obtener_cita_pendiente(telefono)
+                
+                if cita_pendiente:
+                    event_id = None
+                    # 2. Crear la cita en Google Calendar
+                    try:
+                        # Evaluar el nombre de la función en calendar_service
+                        func_agendar = getattr(calendar_service, 'agendar_cita', None) or getattr(calendar_service, 'agendar_cita_google_calendar', None)
+                        
+                        if func_agendar:
+                            event_id = func_agendar(
+                                resumen=f"{cita_pendiente.get('tipo_cita', 'Consulta')} - {cita_pendiente.get('paciente')}",
+                                fecha=cita_pendiente.get('fecha_iso'),
+                                hora_inicio=cita_pendiente.get('hora_iso'),
+                                descripcion=f"Paciente: {cita_pendiente.get('paciente')}\nTeléfono: {telefono}"
+                            )
+                            print("[GOOGLE CALENDAR] Cita agregada exitosamente tras pago confirmado.")
+                    except Exception as cal_err:
+                        print(f"[ERROR GOOGLE CALENDAR] {cal_err}")
+                    
+                    # 3. Confirmar la cita como PAGADA y reiniciar estado del usuario
+                    database.confirmar_cita_pagada(telefono, event_id)
+                    database.guardar_estado_usuario(telefono, 'INICIO', {})
 
-            elif status == 'DECLINED':
-                print(f"[WOMPI] Pago RECHAZADO. Referencia/Teléfono: {reference}")
-                if reference:
-                    mensaje_rechazo = (
-                        "❌ Tu pago no pudo ser procesado. "
-                        "Por favor, intenta nuevamente utilizando el enlace enviado."
+                    # 4. Enviar mensaje de confirmación directa al cliente por WhatsApp
+                    mensaje_exito = (
+                        f"✅ *¡Pago recibido exitosamente!*\n\n"
+                        f"👤 *Paciente:* {cita_pendiente.get('paciente')}\n"
+                        f"📅 *Fecha:* {cita_pendiente.get('fecha_str')}\n"
+                        f"⏰ *Hora:* {cita_pendiente.get('hora_str')}\n\n"
+                        f"Tu cita médica ha sido confirmada y agendada en nuestro calendario. "
+                        f"¡Te esperamos!"
                     )
-                    enviar_mensaje_meta(reference, mensaje_rechazo)
+                    enviar_mensaje_meta(telefono, mensaje_exito)
+
+            elif status in ['DECLINED', 'ERROR', 'VOIDED']:
+                print(f"[WOMPI] Pago NO COMPLETADO ({status}). Referencia/Teléfono: {telefono}")
+                if telefono:
+                    mensaje_rechazo = (
+                        "❌ El pago no se completó de manera correcta. Por favor, intenta nuevamente para asegurar tu turno.\n\n"
+                        f"👉 *Enlace de pago:* {LINK_DE_PAGO}"
+                    )
+                    enviar_mensaje_meta(telefono, mensaje_rechazo)
 
     except Exception as e:
         print(f"[ERROR PROCESANDO WEBHOOK WOMPI] {e}")

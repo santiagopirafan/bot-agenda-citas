@@ -1,4 +1,4 @@
-from calendar_service import obtener_dias_disponibles, obtener_horas_disponibles, agendar_cita
+from calendar_service import obtener_dias_disponibles, obtener_horas_disponibles
 from database import obtener_usuario, guardar_estado_usuario
 from config import PRECIO_PRIMERA_CITA, PRECIO_SEGUIMIENTO, LINK_DE_PAGO
 import database
@@ -46,7 +46,6 @@ def procesar_mensaje_usuario(telefono, mensaje):
             tipo = "Primera Cita" if mensaje_limpio == '1' else "Cita de Seguimiento"
             precio = PRECIO_PRIMERA_CITA if mensaje_limpio == '1' else PRECIO_SEGUIMIENTO
             
-            # Ahora llamamos la función del mes completo sin límite de 7 días
             dias = obtener_dias_disponibles()
             if not dias:
                 return "Lo sentimos, no hay días disponibles en lo que resta del mes."
@@ -84,10 +83,11 @@ def procesar_mensaje_usuario(telefono, mensaje):
                 guardar_estado_usuario(telefono, 'ESPERANDO_HORA', datos_temp)
 
                 respuesta = f"⏰ *Horarios disponibles para {dia_elegido['fecha_str']}:*\n\n"
+                respuesta += "Escribe el *número de la hora* que deseas agendar:\n\n"
                 for idx, hora in enumerate(horas, 1):
                     respuesta += f"*{idx}.* {hora['hora_str']}\n"
                 
-                respuesta += "\nEscribe el *número de la hora* que deseas agendar."
+                respuesta += "\n_Escribe *0* para cancelar._"
                 return respuesta
         return f"⚠️ Opción no válida. Por favor, envía un número del *1 al {len(dias_opciones)}*."
 
@@ -112,41 +112,52 @@ def procesar_mensaje_usuario(telefono, mensaje):
                 )
         return f"⚠️ Opción no válida. Envía un número del *1 al {len(horas_opciones)}*."
 
-   # --- ESTADO 5: NOMBRE Y ENVÍO DEL LINK DE PAGO ---
+    # --- ESTADO 5: NOMBRE Y REGISTRO PENDIENTE (SIN CREAR EVENTO EN GOOGLE CALENDAR AÚN) ---
     elif estado == 'ESPERANDO_NOMBRE':
         nombre_usuario = mensaje.strip()
         datos_temp['nombre_paciente'] = nombre_usuario
         
-        # Guardar en Google Calendar
-        event_id = agendar_cita(
-            resumen=f"{datos_temp['tipo_cita']} - {nombre_usuario}",
-            fecha=datos_temp['fecha_iso'],
-            hora_inicio=datos_temp['hora_iso'],
-            descripcion=f"Paciente: {nombre_usuario}\nTeléfono: {telefono}"
-        )
-        
-        if event_id:
-            # Guardar registro en la base de datos SQLite para consultas/cancelaciones posteriores
+        # 1. Guardar o actualizar registro preliminar en SQLite con estado PENDIENTE
+        if hasattr(database, 'guardar_cita_pendiente'):
+            database.guardar_cita_pendiente(
+                telefono=telefono,
+                paciente=nombre_usuario,
+                fecha_str=datos_temp['fecha_str'],
+                fecha_iso=datos_temp['fecha_iso'],
+                hora_str=datos_temp['hora_str'],
+                hora_iso=datos_temp['hora_iso'],
+                tipo_cita=datos_temp['tipo_cita']
+            )
+        else:
+            # En caso de que uses la función genérica guardar_cita
             database.guardar_cita(
                 telefono=telefono,
                 paciente=nombre_usuario,
                 fecha=datos_temp['fecha_str'],
                 hora=datos_temp['hora_str'],
-                event_id=event_id
+                event_id=None,
+                estado='PENDIENTE'
             )
 
-            # Reiniciar estado del usuario
-            guardar_estado_usuario(telefono, 'INICIO', {}, nombre=nombre_usuario)
+        # 2. Guardar el estado esperandopago sin crear evento en Google Calendar aún
+        guardar_estado_usuario(telefono, 'ESPERANDO_PAGO', datos_temp, nombre=nombre_usuario)
 
-            return (
-                f"✅ *¡Pre-reserva registrada con éxito!*\n\n"
-                f"👤 *Paciente:* {nombre_usuario}\n"
-                f"📅 *Fecha:* {datos_temp['fecha_str']}\n"
-                f"⏰ *Hora:* {datos_temp['hora_str']}\n"
-                f"💰 *Valor:* ${datos_temp['precio']:,} COP\n\n"
-                f"💳 *Para confirmar y asegurar tu espacio, realiza el pago en el siguiente enlace:*\n"
-                f"{LINK_DE_PAGO}\n\n"
-                f"¡Te esperamos!"
-            )
-        else:
-            return "❌ Ocurrió un error al registrar la cita en la agenda. Por favor escribe *1* para intentar agendar nuevamente."
+        return (
+            f"✅ *Pre-reserva registrada con éxito.*\n\n"
+            f"👤 *Paciente:* {nombre_usuario}\n"
+            f"📅 *Fecha:* {datos_temp['fecha_str']}\n"
+            f"⏰ *Hora:* {datos_temp['hora_str']}\n"
+            f"💰 *Valor:* ${datos_temp['precio']:,} COP\n\n"
+            f"💳 *Para confirmar y agendar tu cita en el calendario, realiza el pago en el siguiente enlace:*\n"
+            f"{LINK_DE_PAGO}\n\n"
+            f"_Una vez confirmado el pago, tu cita se agendará automáticamente en nuestra agenda._"
+        )
+
+    # --- ESTADO 6: ESPERANDO PAGO (Si el usuario escribe algo en el chat antes de pagar) ---
+    elif estado == 'ESPERANDO_PAGO':
+        return (
+            "⏳ Estamos a la espera de la confirmación de tu pago.\n\n"
+            f"Por favor ingresa al enlace para completar el pago:\n{LINK_DE_PAGO}\n\n"
+            "Una vez aprobado, tu cita se agendará en el calendario automáticamente.\n"
+            "_Escribe *0* o *cancelar* si deseas reiniciar el proceso._"
+        )

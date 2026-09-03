@@ -4,7 +4,7 @@ import json
 DB_NAME = "database.db"
 
 def init_db():
-    """Inicializa la base de datos y crea las tablas si no existen."""
+    """Inicializa la base de datos y crea/actualiza las tablas si no existen."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     
@@ -18,18 +18,37 @@ def init_db():
         )
     ''')
     
-    # Tabla de citas agendadas
+    # Tabla de citas agendadas y pendientes
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS citas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             telefono TEXT,
             paciente TEXT,
             fecha TEXT,
+            fecha_iso TEXT,
             hora TEXT,
-            event_id TEXT
+            hora_iso TEXT,
+            tipo_cita TEXT,
+            event_id TEXT,
+            estado TEXT DEFAULT 'PENDIENTE'
         )
     ''')
     
+    # Migración liviana por si la tabla 'citas' ya existía sin las nuevas columnas
+    cursor.execute("PRAGMA table_info(citas)")
+    columnas = [col[1] for col in cursor.fetchall()]
+    
+    columnas_nuevas = {
+        'fecha_iso': 'TEXT',
+        'hora_iso': 'TEXT',
+        'tipo_cita': 'TEXT',
+        'estado': "TEXT DEFAULT 'PENDIENTE'"
+    }
+    
+    for col, col_type in columnas_nuevas.items():
+        if col not in columnas:
+            cursor.execute(f"ALTER TABLE citas ADD COLUMN {col} {col_type}")
+
     conn.commit()
     conn.close()
 
@@ -77,26 +96,76 @@ def guardar_estado_usuario(telefono, estado, datos_temp=None, nombre=None):
 # FUNCIONES DE GESTIÓN DE CITAS
 # ==========================================
 
-def guardar_cita(telefono, paciente, fecha, hora, event_id=None):
-    """Guarda un registro de cita agendada."""
+def guardar_cita_pendiente(telefono, paciente, fecha_str, fecha_iso, hora_str, hora_iso, tipo_cita="Consulta"):
+    """Guarda una pre-reserva con estado PENDIENTE a la espera del pago en Wompi."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO citas (telefono, paciente, fecha, hora, event_id)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (telefono, paciente, fecha, hora, event_id))
+        INSERT INTO citas (telefono, paciente, fecha, fecha_iso, hora, hora_iso, tipo_cita, estado)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDIENTE')
+    ''', (telefono, paciente, fecha_str, fecha_iso, hora_str, hora_iso, tipo_cita))
+    conn.commit()
+    conn.close()
+
+
+def guardar_cita(telefono, paciente, fecha, hora, event_id=None, estado='PENDIENTE'):
+    """Guarda o actualiza un registro genérico de cita."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO citas (telefono, paciente, fecha, hora, event_id, estado)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (telefono, paciente, fecha, hora, event_id, estado))
+    conn.commit()
+    conn.close()
+
+
+def obtener_cita_pendiente(telefono):
+    """Recupera la última pre-reserva pendiente del usuario para confirmarla cuando el pago apruebe."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT paciente, fecha, fecha_iso, hora, hora_iso, tipo_cita 
+        FROM citas 
+        WHERE telefono = ? AND estado = 'PENDIENTE'
+        ORDER BY id DESC LIMIT 1
+    ''', (telefono,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row:
+        return {
+            'paciente': row[0],
+            'fecha_str': row[1],
+            'fecha_iso': row[2],
+            'hora_str': row[3],
+            'hora_iso': row[4],
+            'tipo_cita': row[5]
+        }
+    return None
+
+
+def confirmar_cita_pagada(telefono, event_id):
+    """Actualiza el estado de la cita a 'PAGADO' y guarda el ID de Google Calendar."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE citas 
+        SET estado = 'PAGADO', event_id = ? 
+        WHERE telefono = ? AND estado = 'PENDIENTE'
+    ''', (event_id, telefono))
     conn.commit()
     conn.close()
 
 
 def consultar_citas(telefono):
-    """Obtiene la última cita registrada asociada al número de teléfono."""
+    """Obtiene la última cita (pagada o confirmada) del usuario."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute('''
-        SELECT paciente, fecha, hora, event_id 
+        SELECT paciente, fecha, hora, event_id, estado 
         FROM citas 
-        WHERE telefono = ? 
+        WHERE telefono = ? AND estado = 'PAGADO'
         ORDER BY id DESC LIMIT 1
     ''', (telefono,))
     row = cursor.fetchone()
@@ -107,13 +176,14 @@ def consultar_citas(telefono):
             "paciente": row[0],
             "fecha": row[1],
             "hora": row[2],
-            "event_id": row[3]
+            "event_id": row[3],
+            "estado": row[4]
         }
     return None
 
 
 def eliminar_cita(telefono):
-    """Elimina las citas asociadas a un número de teléfono."""
+    """Elimina las citas registradas asociadas a un número de teléfono."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute('DELETE FROM citas WHERE telefono = ?', (telefono,))
@@ -121,5 +191,5 @@ def eliminar_cita(telefono):
     conn.close()
 
 
-# Se ejecuta automáticamente al cargar el módulo para prevenir errores
+# Se ejecuta automáticamente al cargar el módulo para crear/actualizar la base de datos
 init_db()
