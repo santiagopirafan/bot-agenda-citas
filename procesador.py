@@ -19,9 +19,9 @@ def procesar_mensaje_usuario(telefono, mensaje):
         return (
             "🔄 *Proceso cancelado.*\n\n"
             "Bienvenido al sistema de citas. Por favor selecciona una opción:\n"
-            "1. Agendar cita\n"
-            "2. Consultar cita\n"
-            "3. Cancelar cita"
+            "*1.* Agendar cita\n"
+            "*2.* Consultar cita\n"
+            "*3.* Cancelar cita"
         )
 
     # --- ESTADO 1: MENÚ PRINCIPAL ---
@@ -93,7 +93,7 @@ def procesar_mensaje_usuario(telefono, mensaje):
                 for idx, hora in enumerate(horas, 1):
                     respuesta += f"*{idx}.* {hora['hora_str']}\n"
                 
-                respuesta += "\nEscribe el *números de la hora* que deseas agendar."
+                respuesta += "\nEscribe el *número de la hora* que deseas agendar."
                 return respuesta
         return f"⚠️ Opción no válida. Por favor, envía un número del *1 al {len(dias_opciones)}*."
 
@@ -123,7 +123,6 @@ def procesar_mensaje_usuario(telefono, mensaje):
         nombre_usuario = mensaje.strip()
         datos_temp['nombre_paciente'] = nombre_usuario
         
-        # Agendar la cita
         exito = agendar_cita(
             resumen=f"{datos_temp['tipo_cita']} - {nombre_usuario}",
             fecha=datos_temp['fecha_iso'],
