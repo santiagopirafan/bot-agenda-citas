@@ -17,15 +17,27 @@ def obtener_servicio():
     google_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
     
     if google_json_env:
-        # Reemplazar posibles saltos de línea mal formateados en Render
-        google_json_env = google_json_env.replace('\\n', '\n')
-        info = json.loads(google_json_env)
-        
-        # Corregir la clave privada si los saltos de línea se escaparon doblemente
-        if "private_key" in info and isinstance(info["private_key"], str):
-            info["private_key"] = info["private_key"].replace('\\n', '\n')
+        try:
+            # 1. Limpieza inicial de comillas adicionales y saltos de línea
+            google_json_env = google_json_env.strip()
+            if (google_json_env.startswith('"') and google_json_env.endswith('"')) or \
+               (google_json_env.startswith("'") and google_json_env.endswith("'")):
+                google_json_env = google_json_env[1:-1]
 
-        credenciales = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+            # 2. Reemplazo de saltos de línea escapados
+            google_json_env = google_json_env.replace('\\n', '\n')
+
+            # 3. Parseo con strict=False para tolerar caracteres de control
+            info = json.loads(google_json_env, strict=False)
+            
+            # 4. Asegurar formato PEM correcto en private_key
+            if "private_key" in info and isinstance(info["private_key"], str):
+                info["private_key"] = info["private_key"].replace('\\n', '\n')
+
+            credenciales = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+        except Exception as e:
+            print(f"[ERROR PARSING GOOGLE CREDENTIALS] {e}")
+            raise e
     elif os.path.exists(CREDENTIALS_FILE):
         credenciales = service_account.Credentials.from_service_account_file(
             CREDENTIALS_FILE, scopes=SCOPES
