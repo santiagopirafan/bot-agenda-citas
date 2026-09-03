@@ -2,8 +2,12 @@ import os
 import requests
 from flask import Flask, request, jsonify
 from main import recibir_mensaje
+import database  # Importamos la base de datos
 
 app = Flask(__name__)
+
+# Aseguramos la creación de tablas al iniciar la aplicación Flask
+database.init_db()
 
 # Configuración de variables de entorno (Render)
 VERIFY_TOKEN = os.getenv("WEBHOOK_VERIFY_TOKEN", "mi_token_de_verificacion_seguro")
@@ -84,7 +88,6 @@ def webhook():
                     if tipo_mensaje == 'text':
                         texto = mensaje.get('text', {}).get('body', '')
                     elif tipo_mensaje == 'interactive':
-                        # Soporte para botones o listas interactivas si las implementas a futuro
                         interactive = mensaje.get('interactive', {})
                         if interactive.get('type') == 'button_reply':
                             texto = interactive.get('button_reply', {}).get('title', '')
@@ -98,12 +101,13 @@ def webhook():
                         respuesta_bot = recibir_mensaje(telefono, texto)
                         
                         # 2. Enviar respuesta de regreso a través de Meta API
-                        enviar_mensaje_meta(telefono, respuesta_bot)
+                        if respuesta_bot:
+                            enviar_mensaje_meta(telefono, respuesta_bot)
 
     except Exception as e:
         print(f"[ERROR PROCESANDO WEBHOOK] {e}")
 
-    # Meta requiere siempre una respuesta 200 OK inmediata para no reintentar el envío
+    # Meta requiere siempre una respuesta 200 OK inmediata
     return jsonify({"status": "success"}), 200
 
 if __name__ == '__main__':

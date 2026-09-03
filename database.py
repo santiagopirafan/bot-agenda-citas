@@ -4,8 +4,11 @@ import json
 DB_NAME = "database.db"
 
 def init_db():
+    """Inicializa la base de datos y crea las tablas si no existen."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
+    
+    # Tabla de estados de usuarios
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS usuarios (
             telefono TEXT PRIMARY KEY,
@@ -14,6 +17,19 @@ def init_db():
             nombre TEXT
         )
     ''')
+    
+    # Tabla de citas agendadas
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS citas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            telefono TEXT,
+            paciente TEXT,
+            fecha TEXT,
+            hora TEXT,
+            event_id TEXT
+        )
+    ''')
+    
     conn.commit()
     conn.close()
 
@@ -53,3 +69,6 @@ def guardar_estado_usuario(telefono, estado, datos_temp=None, nombre=None):
 
     conn.commit()
     conn.close()
+
+# Se ejecuta automáticamente al cargar el módulo para prevenir errores
+init_db()
