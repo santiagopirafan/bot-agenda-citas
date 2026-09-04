@@ -1,5 +1,6 @@
 import os
 import json
+import uuid
 import zoneinfo
 import calendar
 from googleapiclient.errors import HttpError
@@ -75,11 +76,12 @@ def obtener_dias_disponibles():
 def obtener_horas_disponibles(fecha_str):
     """
     Consulta los eventos ocupados en Calendar y devuelve los horarios libres formateados.
+    Jornada extendida: 06:00 AM a 07:00 PM (19:00) de corrido.
     """
     servicio = obtener_servicio()
     
-    inicio_dia = f"{fecha_str}T08:00:00-05:00"
-    fin_dia = f"{fecha_str}T17:00:00-05:00"
+    inicio_dia = f"{fecha_str}T06:00:00-05:00"
+    fin_dia = f"{fecha_str}T20:00:00-05:00"
 
     eventos_result = servicio.events().list(
         calendarId=CALENDAR_ID,
@@ -96,14 +98,29 @@ def obtener_horas_disponibles(fecha_str):
         for e in eventos if 'dateTime' in e['start']
     ]
 
-    jornada = ["08:00", "09:00", "10:00", "11:00", "14:00", "15:00", "16:00"]
+    # Jornada extendida de 06:00 AM a 07:00 PM (19:00)
+    jornada = [
+        "06:00", "07:00", "08:00", "09:00", "10:00", "11:00", "12:00", 
+        "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"
+    ]
+    
     horas_libres = []
 
     for hora in jornada:
         if hora not in horas_ocupadas:
+            hora_num = int(hora[:2])
+            
+            # Formateo amigable AM/PM
+            if hora_num < 12:
+                hora_str = f"{hora_num:02d}:00 AM"
+            elif hora_num == 12:
+                hora_str = "12:00 PM"
+            else:
+                hora_str = f"{hora_num - 12:02d}:00 PM"
+
             horas_libres.append({
                 'hora_iso': hora,
-                'hora_str': f"{hora} AM" if int(hora[:2]) < 12 else f"{int(hora[:2])-12 if int(hora[:2]) > 12 else 12}:00 PM"
+                'hora_str': hora_str
             })
             
     return horas_libres
@@ -111,31 +128,85 @@ def obtener_horas_disponibles(fecha_str):
 
 def agendar_cita(resumen, fecha, hora_inicio, duracion_minutos=30, descripcion=""):
     """
-    Crea el evento en Google Calendar y retorna el event_id creado (o None si falla).
+    Crea el evento en Google Calendar y genera el enlace de Google Meet.
+    Retorna una tupla: (event_id, meet_link).
     """
-    try:
-        servicio = obtener_servicio()
-        inicio_dt = datetime.strptime(f"{fecha} {hora_inicio}", "%Y-%m-%d %H:%M")
-        fin_dt = inicio_dt + timedelta(minutes=duracion_minutos)
+    servicio = obtener_servicio()
 
-        evento = {
-            'summary': resumen,
-            'description': descripcion,
-            'start': {
-                'dateTime': inicio_dt.isoformat(),
-                'timeZone': 'America/Bogota',
-            },
-            'end': {
-                'dateTime': fin_dt.isoformat(),
-                'timeZone': 'America/Bogota',
-            },
+    # 1. Limpieza de fecha y hora
+    fecha_clean = str(fecha).split('T')[0].strip()
+    
+    # Extraer solo HH:MM si viene en formato "09:00" o "09:00:00"
+    hora_clean = str(hora_inicio).strip().split(' ')[0]
+    if len(hora_clean.split(':')) > 2:
+        hora_clean = ":".join(hora_clean.split(':')[:2])
+
+    try:
+        inicio_dt = datetime.strptime(f"{fecha_clean} {hora_clean}", "%Y-%m-%d %H:%M")
+    except Exception as err_parse:
+        print(f"[ERROR PARSEO FECHA/HORA] No se pudo parsear fecha='{fecha}' hora='{hora_inicio}': {err_parse}")
+        return None, None
+
+    fin_dt = inicio_dt + timedelta(minutes=duracion_minutos)
+
+    base_evento = {
+        'summary': resumen,
+        'description': descripcion,
+        'start': {
+            'dateTime': inicio_dt.strftime("%Y-%m-%dT%H:%M:%S-05:00"),
+            'timeZone': 'America/Bogota',
+        },
+        'end': {
+            'dateTime': fin_dt.strftime("%Y-%m-%dT%H:%M:%S-05:00"),
+            'timeZone': 'America/Bogota',
+        }
+    }
+
+    # 2. Intentar crear evento con Google Meet
+    try:
+        evento_con_meet = base_evento.copy()
+        evento_con_meet['conferenceData'] = {
+            'createRequest': {
+                'requestId': str(uuid.uuid4()),
+                'conferenceSolutionKey': {
+                    'type': 'addOn'
+                }
+            }
         }
 
-        evento_creado = servicio.events().insert(calendarId=CALENDAR_ID, body=evento).execute()
-        return evento_creado.get('id')
-    except Exception as e:
-        print(f"Error agendando cita: {e}")
-        return None
+        evento_creado = servicio.events().insert(
+            calendarId=CALENDAR_ID, 
+            body=evento_con_meet,
+            conferenceDataVersion=1
+        ).execute()
+
+        event_id = evento_creado.get('id')
+        
+        # Extraer enlace de Meet
+        meet_link = evento_creado.get('hangoutLink')
+        if not meet_link:
+            entry_points = evento_creado.get('conferenceData', {}).get('entryPoints', [])
+            for ep in entry_points:
+                if ep.get('entryPointType') == 'video':
+                    meet_link = ep.get('uri')
+                    break
+
+        print(f"[CALENDAR SUCCESS] Evento creado con ID: {event_id} | Meet: {meet_link}")
+        return event_id, meet_link
+
+    except Exception as err:
+        print(f"[WARN MEET] Error al adjuntar Meet ({err}). Creando evento simple...")
+        try:
+            evento_creado = servicio.events().insert(
+                calendarId=CALENDAR_ID, 
+                body=base_evento
+            ).execute()
+            
+            print(f"[CALENDAR SUCCESS] Evento simple creado con ID: {evento_creado.get('id')}")
+            return evento_creado.get('id'), None
+        except Exception as e_simple:
+            print(f"[ERROR CRÍTICO CALENDAR] No se pudo crear ni el evento simple: {e_simple}")
+            return None, None
 
 
 def eliminar_evento(event_id):

@@ -12,9 +12,9 @@ database.init_db()
 
 # Configuración de variables de entorno (Render / Hosting)
 VERIFY_TOKEN = os.getenv("WEBHOOK_VERIFY_TOKEN", "mi_token_de_verificacion_seguro")
-WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
+WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN" , "EAAgl5uomwpIBSTBCXF01foZCpLjexGFlMEyeT6o840dSoNoCRzemUGaFgiH2INWRNOWqD6RQHlMjmUt8GXdrZBvqVk07getTcjU0SsEUffyIsSLsZBalGBFoRvTajc4cKLhFbh2L974OE6nV0aZAMPQU1vJKpL9NtfmyuZC01RkHF9DHWx7zoFi4HBveQqkTFUAZDZD")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID", "1243724885499477")
-LINK_DE_PAGO = os.getenv("LINK_DE_PAGO", "")
+LINK_DE_PAGO = os.getenv("LINK_DE_PAGO", "https://checkout.wompi.co/l/test_VPOS_6fb1HX")
 PORT = int(os.environ.get("PORT", 5000))
 
 def enviar_mensaje_meta(telefono, texto):
@@ -142,34 +142,44 @@ def wompi_webhook():
                 
                 if cita_pendiente:
                     event_id = None
+                    meet_link = None
+                    
                     # 2. Crear la cita en Google Calendar
                     try:
-                        # Evaluar el nombre de la función en calendar_service
                         func_agendar = getattr(calendar_service, 'agendar_cita', None) or getattr(calendar_service, 'agendar_cita_google_calendar', None)
                         
                         if func_agendar:
-                            event_id = func_agendar(
+                            res_event = func_agendar(
                                 resumen=f"{cita_pendiente.get('tipo_cita', 'Consulta')} - {cita_pendiente.get('paciente')}",
                                 fecha=cita_pendiente.get('fecha_iso'),
                                 hora_inicio=cita_pendiente.get('hora_iso'),
                                 descripcion=f"Paciente: {cita_pendiente.get('paciente')}\nTeléfono: {telefono}"
                             )
-                            print("[GOOGLE CALENDAR] Cita agregada exitosamente tras pago confirmado.")
+                            
+                            # Manejar si retorna tupla (event_id, meet_link) o valor único
+                            if isinstance(res_event, tuple):
+                                event_id, meet_link = res_event
+                            else:
+                                event_id = res_event
+
+                            print("[GOOGLE CALENDAR] Cita y videoconferencia de Meet procesadas.")
                     except Exception as cal_err:
                         print(f"[ERROR GOOGLE CALENDAR] {cal_err}")
                     
-                    # 3. Confirmar la cita como PAGADA y reiniciar estado del usuario
-                    database.confirmar_cita_pagada(telefono, event_id)
+                    # 3. Confirmar la cita como PAGADA en SQLite guardando event_id y meet_link
+                    database.confirmar_cita_pagada(telefono, event_id, meet_link)
                     database.guardar_estado_usuario(telefono, 'INICIO', {})
 
                     # 4. Enviar mensaje de confirmación directa al cliente por WhatsApp
+                    texto_meet = f"💻 *Enlace a la videollamada (Google Meet):*\n{meet_link}\n\n" if meet_link else ""
+                    
                     mensaje_exito = (
                         f"✅ *¡Pago recibido exitosamente!*\n\n"
                         f"👤 *Paciente:* {cita_pendiente.get('paciente')}\n"
                         f"📅 *Fecha:* {cita_pendiente.get('fecha_str')}\n"
                         f"⏰ *Hora:* {cita_pendiente.get('hora_str')}\n\n"
-                        f"Tu cita médica ha sido confirmada y agendada en nuestro calendario. "
-                        f"¡Te esperamos!"
+                        f"{texto_meet}"
+                        f"Tu cita médica ha sido confirmada y agendada en nuestro calendario. ¡Te esperamos!"
                     )
                     enviar_mensaje_meta(telefono, mensaje_exito)
 

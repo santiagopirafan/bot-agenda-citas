@@ -1,5 +1,5 @@
 from calendar_service import obtener_dias_disponibles, obtener_horas_disponibles
-from database import obtener_usuario, guardar_estado_usuario
+from database import obtener_usuario, guardar_estado_usuario, consultar_citas, eliminar_cita
 from config import PRECIO_PRIMERA_CITA, PRECIO_SEGUIMIENTO, LINK_DE_PAGO
 import database
 
@@ -22,7 +22,7 @@ def procesar_mensaje_usuario(telefono, mensaje):
             "Bienvenido al sistema de citas. Por favor selecciona una opción:\n"
             "*1.* Agendar cita\n"
             "*2.* Consultar cita\n"
-            "*3.* Cancelar cita"
+            "*3.* Cancelar cita registrada"
         )
 
     # --- ESTADO 1: MENÚ PRINCIPAL ---
@@ -35,9 +35,31 @@ def procesar_mensaje_usuario(telefono, mensaje):
                 f"*2.* Cita de Control / Seguimiento (${PRECIO_SEGUIMIENTO:,} COP)\n\n"
                 "_Escribe *0* para cancelar._"
             )
+        elif mensaje_limpio in ['2', 'consultar', 'consultar cita', 'ver cita']:
+            cita = consultar_citas(telefono)
+            if cita:
+                texto_meet = f"\n💻 *Enlace a Google Meet:*\n{cita['meet_link']}\n" if cita.get('meet_link') else ""
+                return (
+                    f"📌 *Tu cita agendada:*\n\n"
+                    f"👤 *Paciente:* {cita['paciente']}\n"
+                    f"📅 *Fecha:* {cita['fecha']}\n"
+                    f"⏰ *Hora:* {cita['hora']}\n"
+                    f"{texto_meet}\n"
+                    f"¡Te esperamos!"
+                )
+            else:
+                return "❌ No encontramos ninguna cita pagada o activa registrada con este número de teléfono."
+
+        elif mensaje_limpio in ['3', 'eliminar cita', 'cancelar cita']:
+            cita = consultar_citas(telefono)
+            if cita:
+                eliminar_cita(telefono)
+                return "✅ Tu cita ha sido eliminada del sistema."
+            else:
+                return "❌ No tienes ninguna cita registrada para cancelar."
+
         else:
-            # Si no es la opción de agendar (1), devolvemos None para que main.py
-            # se encargue de procesar los comandos 'consultar', 'cancelar' o saludos.
+            # Retorna None para que main.py/webhook gestione saludos u otros textos desconocidos
             return None
 
     # --- ESTADO 2: SELECCIÓN TIPO DE CITA ---
@@ -112,12 +134,12 @@ def procesar_mensaje_usuario(telefono, mensaje):
                 )
         return f"⚠️ Opción no válida. Envía un número del *1 al {len(horas_opciones)}*."
 
-    # --- ESTADO 5: NOMBRE Y REGISTRO PENDIENTE (SIN CREAR EVENTO EN GOOGLE CALENDAR AÚN) ---
+    # --- ESTADO 5: NOMBRE Y REGISTRO PENDIENTE ---
     elif estado == 'ESPERANDO_NOMBRE':
         nombre_usuario = mensaje.strip()
         datos_temp['nombre_paciente'] = nombre_usuario
         
-        # 1. Guardar o actualizar registro preliminar en SQLite con estado PENDIENTE
+        # Guardar registro preliminar en SQLite con estado PENDIENTE
         if hasattr(database, 'guardar_cita_pendiente'):
             database.guardar_cita_pendiente(
                 telefono=telefono,
@@ -129,7 +151,6 @@ def procesar_mensaje_usuario(telefono, mensaje):
                 tipo_cita=datos_temp['tipo_cita']
             )
         else:
-            # En caso de que uses la función genérica guardar_cita
             database.guardar_cita(
                 telefono=telefono,
                 paciente=nombre_usuario,
@@ -139,7 +160,7 @@ def procesar_mensaje_usuario(telefono, mensaje):
                 estado='PENDIENTE'
             )
 
-        # 2. Guardar el estado esperandopago sin crear evento en Google Calendar aún
+        # Transicionar a ESPERANDO_PAGO
         guardar_estado_usuario(telefono, 'ESPERANDO_PAGO', datos_temp, nombre=nombre_usuario)
 
         return (
@@ -153,7 +174,7 @@ def procesar_mensaje_usuario(telefono, mensaje):
             f"_Una vez confirmado el pago, tu cita se agendará automáticamente en nuestra agenda._"
         )
 
-    # --- ESTADO 6: ESPERANDO PAGO (Si el usuario escribe algo en el chat antes de pagar) ---
+    # --- ESTADO 6: ESPERANDO PAGO ---
     elif estado == 'ESPERANDO_PAGO':
         return (
             "⏳ Estamos a la espera de la confirmación de tu pago.\n\n"

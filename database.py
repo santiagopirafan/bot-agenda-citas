@@ -30,6 +30,7 @@ def init_db():
             hora_iso TEXT,
             tipo_cita TEXT,
             event_id TEXT,
+            meet_link TEXT,
             estado TEXT DEFAULT 'PENDIENTE'
         )
     ''')
@@ -42,6 +43,7 @@ def init_db():
         'fecha_iso': 'TEXT',
         'hora_iso': 'TEXT',
         'tipo_cita': 'TEXT',
+        'meet_link': 'TEXT',
         'estado': "TEXT DEFAULT 'PENDIENTE'"
     }
     
@@ -108,14 +110,14 @@ def guardar_cita_pendiente(telefono, paciente, fecha_str, fecha_iso, hora_str, h
     conn.close()
 
 
-def guardar_cita(telefono, paciente, fecha, hora, event_id=None, estado='PENDIENTE'):
+def guardar_cita(telefono, paciente, fecha, hora, event_id=None, meet_link=None, estado='PENDIENTE'):
     """Guarda o actualiza un registro genérico de cita."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO citas (telefono, paciente, fecha, hora, event_id, estado)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', (telefono, paciente, fecha, hora, event_id, estado))
+        INSERT INTO citas (telefono, paciente, fecha, hora, event_id, meet_link, estado)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (telefono, paciente, fecha, hora, event_id, meet_link, estado))
     conn.commit()
     conn.close()
 
@@ -145,25 +147,25 @@ def obtener_cita_pendiente(telefono):
     return None
 
 
-def confirmar_cita_pagada(telefono, event_id):
-    """Actualiza el estado de la cita a 'PAGADO' y guarda el ID de Google Calendar."""
+def confirmar_cita_pagada(telefono, event_id, meet_link=None):
+    """Actualiza el estado de la cita a 'PAGADO', guarda el ID de Calendar y la URL de Google Meet."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute('''
         UPDATE citas 
-        SET estado = 'PAGADO', event_id = ? 
+        SET estado = 'PAGADO', event_id = ?, meet_link = ?
         WHERE telefono = ? AND estado = 'PENDIENTE'
-    ''', (event_id, telefono))
+    ''', (event_id, meet_link, telefono))
     conn.commit()
     conn.close()
 
 
 def consultar_citas(telefono):
-    """Obtiene la última cita (pagada o confirmada) del usuario."""
+    """Obtiene la última cita (pagada o confirmada) del usuario incluyendo su enlace a Meet."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute('''
-        SELECT paciente, fecha, hora, event_id, estado 
+        SELECT paciente, fecha, hora, event_id, meet_link, estado 
         FROM citas 
         WHERE telefono = ? AND estado = 'PAGADO'
         ORDER BY id DESC LIMIT 1
@@ -177,7 +179,8 @@ def consultar_citas(telefono):
             "fecha": row[1],
             "hora": row[2],
             "event_id": row[3],
-            "estado": row[4]
+            "meet_link": row[4],
+            "estado": row[5]
         }
     return None
 
