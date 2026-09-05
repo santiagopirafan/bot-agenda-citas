@@ -3,196 +3,131 @@ import json
 
 DB_NAME = "database.db"
 
+def get_connection():
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    return conn
+
 def init_db():
-    """Inicializa la base de datos y crea/actualiza las tablas si no existen."""
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    
-    # Tabla de estados de usuarios
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS usuarios (
-            telefono TEXT PRIMARY KEY,
-            estado TEXT DEFAULT 'INICIO',
-            datos_temp TEXT DEFAULT '{}',
-            nombre TEXT
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        
+        # Tabla de usuarios (Estado en la conversación)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS usuarios (
+                telefono TEXT PRIMARY KEY,
+                estado TEXT NOT NULL,
+                datos_temp TEXT
+            )
+        """)
+        
+        # Tabla de citas (Agendamientos, planes y sincronización)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS citas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                telefono TEXT NOT NULL,
+                paciente TEXT NOT NULL,
+                tipo_cita TEXT NOT NULL,
+                modalidad TEXT NOT NULL,
+                fecha_iso TEXT NOT NULL,
+                fecha_str TEXT NOT NULL,
+                hora_iso TEXT NOT NULL,
+                hora_str TEXT NOT NULL,
+                estado TEXT NOT NULL, -- 'PENDIENTE_PAGO', 'PAGADO', 'PRESENCIAL_PENDIENTE', 'AGENDADO_MANUAL'
+                plan_nombre TEXT,
+                citas_restantes INTEGER DEFAULT 1,
+                event_id TEXT,
+                meet_link TEXT,
+                notificado_manual INTEGER DEFAULT 0,
+                creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
+
+# --- GESTIÓN DE ESTADOS DE USUARIOS ---
+
+def guardar_estado_usuario(telefono, estado, datos_temp=None):
+    if datos_temp is None:
+        datos_temp = {}
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO usuarios (telefono, estado, datos_temp) VALUES (?, ?, ?)",
+            (telefono, estado, json.dumps(datos_temp))
         )
-    ''')
-    
-    # Tabla de citas agendadas y pendientes
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS citas (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            telefono TEXT,
-            paciente TEXT,
-            fecha TEXT,
-            fecha_iso TEXT,
-            hora TEXT,
-            hora_iso TEXT,
-            tipo_cita TEXT,
-            event_id TEXT,
-            meet_link TEXT,
-            estado TEXT DEFAULT 'PENDIENTE'
-        )
-    ''')
-    
-    # Migración liviana por si la tabla 'citas' ya existía sin las nuevas columnas
-    cursor.execute("PRAGMA table_info(citas)")
-    columnas = [col[1] for col in cursor.fetchall()]
-    
-    columnas_nuevas = {
-        'fecha_iso': 'TEXT',
-        'hora_iso': 'TEXT',
-        'tipo_cita': 'TEXT',
-        'meet_link': 'TEXT',
-        'estado': "TEXT DEFAULT 'PENDIENTE'"
-    }
-    
-    for col, col_type in columnas_nuevas.items():
-        if col not in columnas:
-            cursor.execute(f"ALTER TABLE citas ADD COLUMN {col} {col_type}")
+        conn.commit()
 
-    conn.commit()
-    conn.close()
+def obtener_estado_usuario(telefono):
+    with get_connection() as conn:
+        row = conn.execute("SELECT estado, datos_temp FROM usuarios WHERE telefono = ?", (telefono,)).fetchone()
+        if row:
+            return row["estado"], json.loads(row["datos_temp"] or "{}")
+        return "INICIO", {}
 
+# --- GESTIÓN DE CITAS ---
 
-def obtener_usuario(telefono):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute('SELECT telefono, estado, datos_temp, nombre FROM usuarios WHERE telefono = ?', (telefono,))
-    row = cursor.fetchone()
-    conn.close()
-    if row:
-        return {
-            "telefono": row[0],
-            "estado": row[1],
-            "datos_temp": json.loads(row[2]) if row[2] else {},
-            "nombre": row[3]
-        }
-    return None
+def guardar_cita_pendiente(data):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO citas (
+                telefono, paciente, tipo_cita, modalidad, 
+                fecha_iso, fecha_str, hora_iso, hora_str, 
+                estado, plan_nombre, citas_restantes, event_id, meet_link
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            data['telefono'], data['paciente'], data['tipo_cita'], data['modalidad'],
+            data['fecha_iso'], data['fecha_str'], data['hora_iso'], data['hora_str'],
+            data.get('estado', 'PENDIENTE_PAGO'), data.get('plan_nombre'), 
+            data.get('citas_restantes', 1), data.get('event_id'), data.get('meet_link')
+        ))
+        conn.commit()
 
-
-def guardar_estado_usuario(telefono, estado, datos_temp=None, nombre=None):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    
-    usuario = obtener_usuario(telefono)
-    datos_json = json.dumps(datos_temp) if datos_temp is not None else '{}'
-
-    if usuario:
-        cursor.execute('''
-            UPDATE usuarios 
-            SET estado = ?, datos_temp = ?, nombre = COALESCE(?, nombre)
-            WHERE telefono = ?
-        ''', (estado, datos_json, nombre, telefono))
-    else:
-        cursor.execute('''
-            INSERT INTO usuarios (telefono, estado, datos_temp, nombre)
-            VALUES (?, ?, ?, ?)
-        ''', (telefono, estado, datos_json, nombre))
-
-    conn.commit()
-    conn.close()
-
-
-# ==========================================
-# FUNCIONES DE GESTIÓN DE CITAS
-# ==========================================
-
-def guardar_cita_pendiente(telefono, paciente, fecha_str, fecha_iso, hora_str, hora_iso, tipo_cita="Consulta"):
-    """Guarda una pre-reserva con estado PENDIENTE a la espera del pago en Wompi."""
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO citas (telefono, paciente, fecha, fecha_iso, hora, hora_iso, tipo_cita, estado)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDIENTE')
-    ''', (telefono, paciente, fecha_str, fecha_iso, hora_str, hora_iso, tipo_cita))
-    conn.commit()
-    conn.close()
-
-
-def guardar_cita(telefono, paciente, fecha, hora, event_id=None, meet_link=None, estado='PENDIENTE'):
-    """Guarda o actualiza un registro genérico de cita."""
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO citas (telefono, paciente, fecha, hora, event_id, meet_link, estado)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    ''', (telefono, paciente, fecha, hora, event_id, meet_link, estado))
-    conn.commit()
-    conn.close()
-
+def obtener_cita_activa(telefono):
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM citas WHERE telefono = ? AND estado IN ('PAGADO', 'PRESENCIAL_PENDIENTE', 'AGENDADO_MANUAL') ORDER BY id DESC LIMIT 1",
+            (telefono,)
+        ).fetchone()
+        return dict(row) if row else None
 
 def obtener_cita_pendiente(telefono):
-    """Recupera la última pre-reserva pendiente del usuario para confirmarla cuando el pago apruebe."""
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT paciente, fecha, fecha_iso, hora, hora_iso, tipo_cita 
-        FROM citas 
-        WHERE telefono = ? AND estado = 'PENDIENTE'
-        ORDER BY id DESC LIMIT 1
-    ''', (telefono,))
-    row = cursor.fetchone()
-    conn.close()
-    
-    if row:
-        return {
-            'paciente': row[0],
-            'fecha_str': row[1],
-            'fecha_iso': row[2],
-            'hora_str': row[3],
-            'hora_iso': row[4],
-            'tipo_cita': row[5]
-        }
-    return None
-
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM citas WHERE telefono = ? AND estado = 'PENDIENTE_PAGO' ORDER BY id DESC LIMIT 1",
+            (telefono,)
+        ).fetchone()
+        return dict(row) if row else None
 
 def confirmar_cita_pagada(telefono, event_id, meet_link=None):
-    """Actualiza el estado de la cita a 'PAGADO', guarda el ID de Calendar y la URL de Google Meet."""
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute('''
-        UPDATE citas 
-        SET estado = 'PAGADO', event_id = ?, meet_link = ?
-        WHERE telefono = ? AND estado = 'PENDIENTE'
-    ''', (event_id, meet_link, telefono))
-    conn.commit()
-    conn.close()
+    with get_connection() as conn:
+        conn.execute("""
+            UPDATE citas 
+            SET estado = 'PAGADO', event_id = ?, meet_link = ? 
+            WHERE telefono = ? AND estado = 'PENDIENTE_PAGO'
+        """, (event_id, meet_link, telefono))
+        conn.commit()
 
+def actualizar_evento_cita(cita_id, fecha_iso, fecha_str, hora_iso, hora_str, event_id, meet_link=None):
+    with get_connection() as conn:
+        conn.execute("""
+            UPDATE citas 
+            SET fecha_iso = ?, fecha_str = ?, hora_iso = ?, hora_str = ?, event_id = ?, meet_link = ?
+            WHERE id = ?
+        """, (fecha_iso, fecha_str, hora_iso, hora_str, event_id, meet_link, cita_id))
+        conn.commit()
 
-def consultar_citas(telefono):
-    """Obtiene la última cita (pagada o confirmada) del usuario incluyendo su enlace a Meet."""
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT paciente, fecha, hora, event_id, meet_link, estado 
-        FROM citas 
-        WHERE telefono = ? AND estado = 'PAGADO'
-        ORDER BY id DESC LIMIT 1
-    ''', (telefono,))
-    row = cursor.fetchone()
-    conn.close()
-    
-    if row:
-        return {
-            "paciente": row[0],
-            "fecha": row[1],
-            "hora": row[2],
-            "event_id": row[3],
-            "meet_link": row[4],
-            "estado": row[5]
-        }
-    return None
+def eliminar_cita_por_telefono(telefono):
+    with get_connection() as conn:
+        row = conn.execute("SELECT event_id FROM citas WHERE telefono = ? AND estado IN ('PAGADO', 'PRESENCIAL_PENDIENTE', 'AGENDADO_MANUAL')", (telefono,)).fetchone()
+        event_id = row["event_id"] if row else None
+        conn.execute("DELETE FROM citas WHERE telefono = ?", (telefono,))
+        conn.commit()
+        return event_id
 
+def existe_evento_registrado(event_id):
+    with get_connection() as conn:
+        row = conn.execute("SELECT id FROM citas WHERE event_id = ?", (event_id,)).fetchone()
+        return row is not None
 
-def eliminar_cita(telefono):
-    """Elimina las citas registradas asociadas a un número de teléfono."""
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute('DELETE FROM citas WHERE telefono = ?', (telefono,))
-    conn.commit()
-    conn.close()
-
-
-# Se ejecuta automáticamente al cargar el módulo para crear/actualizar la base de datos
+# Inicializar BD al importar la base de datos
 init_db()
