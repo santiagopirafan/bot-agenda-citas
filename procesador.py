@@ -19,7 +19,7 @@ def procesar_mensaje_usuario(telefono, mensaje):
         if mensaje_limpio in ['2', 'consultar', 'consultar cita', 'ver cita']:
             cita = database.obtener_cita_activa(telefono)
             if cita:
-                texto_meet = f"\n💻 *Enlace a Google Meet:*\n{cita['meet_link']}\n" if cita.get('meet_link') else ""
+                texto_meet = f"\n💻 *Enlace a la Videollamada:*\n{cita['meet_link']}\n" if cita.get('meet_link') else ""
                 return (
                     f"📌 *Tu cita agendada:*\n\n"
                     f"👤 *Paciente:* {cita['paciente']}\n"

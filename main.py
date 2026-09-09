@@ -1,6 +1,6 @@
 import database 
 import procesador
-from controllers.agendamiento import (
+from controllers import (
     iniciar_agendamiento,
     procesar_seleccion_tipo,
     procesar_seleccion_plan,
@@ -41,7 +41,7 @@ def recibir_mensaje(telefono, texto, interactive_id=None):
         elif payload_id in ['BTN_CONSULTAR', '2', 'consultar', 'mis citas', 'consultar cita']:
             cita = database.obtener_cita_activa(telefono)
             if cita:
-                texto_meet = f"\n💻 *Enlace Google Meet:*\n{cita['meet_link']}\n" if cita.get('meet_link') else ""
+                texto_meet = f"\n💻 *Enlace a la Videollamada:*\n{cita['meet_link']}\n" if cita.get('meet_link') else ""
                 msg = (
                     f"📌 *Tu cita activa:*\n\n"
                     f"👤 *Paciente:* {cita['paciente']}\n"
