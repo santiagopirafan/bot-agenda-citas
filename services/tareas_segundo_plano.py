@@ -1,69 +1,122 @@
 import time
 import re
-from datetime import datetime, timedelta
-from services.calendar_service import obtener_servicio, CALENDAR_ID, ZONA_HORARIA
+from datetime import datetime
+import database
+from services.calendar_service import buscar_citas_manuales_nuevas
 from services.whatsapp_service import enviar_mensaje_texto
 
-def escanear_calendario_continuamente():
+INTERVALO_ESCANEO_SEGUNDOS = 30
+
+def extraer_telefono_descripcion(descripcion):
     """
-    Se ejecuta en segundo plano. Busca eventos futuros con un celular (57...)
-    en la descripción, envía confirmación y etiqueta el evento.
+    Busca un número telefónico celular colombiano dentro de la descripción del evento.
+    Soporta formatos: 3147867948, 573147867948, +57 314 786 7948, etc.
     """
-    print("[BACKGROUND] Hilo de escaneo en segundo plano INICIADO.")
+    if not descripcion:
+        return None
+
+    # Elimina caracteres que no sean dígitos
+    solo_numeros = re.sub(r'[^\d]', '', descripcion)
+
+    # Busca número celular de 10 dígitos (3XX...) o con prefijo 57 (573XX...)
+    coincidencia = re.search(r'(573\d{9}|3\d{9})', solo_numeros)
     
+    if coincidencia:
+        numero = coincidencia.group(1)
+        if not numero.startswith('57'):
+            numero = f"57{numero}"
+        return numero
+    
+    return None
+
+def formatear_fecha_legible(fecha_iso):
+    """Convierte fecha YYYY-MM-DD a DD/MM/YYYY"""
+    if not fecha_iso:
+        return ""
+    try:
+        fecha_dt = datetime.strptime(fecha_iso[:10], '%Y-%m-%d')
+        return fecha_dt.strftime('%d/%m/%Y')
+    except Exception:
+        return fecha_iso[:10]
+
+def escanear_eventos_y_notificar():
+    """
+    Lee Google Calendar en búsqueda de eventos asignados manualmente y
+    notifica vía WhatsApp utilizando Meta Cloud API.
+    """
+    try:
+        eventos = buscar_citas_manuales_nuevas()
+        
+        for evento in eventos:
+            event_id = evento.get('id')
+            titulo = evento.get('summary', 'Cita Médica')
+            descripcion = evento.get('description', '')
+            
+            # Si la cita ya fue notificada previamente, se ignora
+            if database.evento_ya_notificado(event_id):
+                continue
+
+            # Extraer teléfono del paciente desde la descripción/notas
+            telefono = extraer_telefono_descripcion(descripcion)
+            if not telefono:
+                continue
+
+            # Formatear Fecha y Hora
+            inicio_info = evento.get('start', {})
+            fecha_raw = inicio_info.get('dateTime', inicio_info.get('date', ''))
+            
+            fecha_corta = formatear_fecha_legible(fecha_raw)
+            hora_corta = ""
+            if 'T' in fecha_raw:
+                hora_corta = fecha_raw.split('T')[1][:5]
+
+            # Construir mensaje oficial para el paciente
+            mensaje = (
+                f"👋 ¡Hola! Te confirmamos tu cita médica.\n\n"
+                f"📌 *Paciente / Detalle:* {titulo}\n"
+                f"📅 *Fecha:* {fecha_corta}\n"
+                f"⏰ *Hora:* {hora_corta}\n\n"
+                f"Por favor estar atento(a) unos minutos antes de tu hora agendada."
+            )
+
+            print(f"[BACKGROUND] Enviando WhatsApp a {telefono} por evento: {event_id}")
+
+            # Envío de WhatsApp a través de la API oficial de Meta
+            respuesta = enviar_mensaje_texto(telefono, mensaje)
+
+            if respuesta and 'messages' in respuesta:
+                database.registrar_notificacion(
+                    event_id=event_id,
+                    telefono=telefono,
+                    paciente_nombre=titulo,
+                    fecha_cita=fecha_corta,
+                    hora_cita=hora_corta,
+                    estado="ENVIADO",
+                    respuesta_manychat=str(respuesta)
+                )
+                print(f"[BACKGROUND SUCCESS] Mensaje WhatsApp enviado a {telefono}")
+            else:
+                database.registrar_notificacion(
+                    event_id=event_id,
+                    telefono=telefono,
+                    paciente_nombre=titulo,
+                    fecha_cita=fecha_corta,
+                    hora_cita=hora_corta,
+                    estado="ERROR",
+                    respuesta_manychat=str(respuesta)
+                )
+                print(f"[BACKGROUND ERROR] Error al enviar WhatsApp a {telefono}: {respuesta}")
+
+    except Exception as e:
+        print(f"[BACKGROUND ERROR] Error en ciclo de escaneo: {e}")
+
+def escanear_calendario_continuamente():
+    """Bucle que se ejecuta en segundo plano cada 30 segundos"""
+    print("[BACKGROUND] Escáner automático de Google Calendar en segundo plano ACTIVO.")
     while True:
         try:
-            servicio = obtener_servicio()
-            ahora = datetime.now(ZONA_HORARIA)
-            inicio_iso = ahora.isoformat()
-            
-            # Consultar eventos desde hoy hasta 30 días en el futuro
-            fin_iso = (ahora + timedelta(days=30)).isoformat()
-            
-            events_result = servicio.events().list(
-                calendarId=CALENDAR_ID,
-                timeMin=inicio_iso,
-                timeMax=fin_iso,
-                singleEvents=True,
-                orderBy='startTime',
-                timeZone='America/Bogota'
-            ).execute()
-
-            eventos = events_result.get('items', [])
-
-            for evento in eventos:
-                descripcion = evento.get('description', '')
-                
-                # Ignorar si ya se notificó o si fue creado automáticamente por el bot
-                if '[NOTIFICADO]' in descripcion or 'Enlace de la videollamada' in descripcion:
-                    continue
-
-                # Extraer el número de teléfono (57 seguido de 10 dígitos)
-                match = re.search(r'(57\d{10})', descripcion)
-                if match:
-                    numero_paciente = match.group(1)
-                    titulo = evento.get('summary', 'tu cita')
-                    inicio = evento['start'].get('dateTime', evento['start'].get('date', ''))
-                    fecha_corta = inicio[:10]
-
-                    print(f"[BACKGROUND] Cita manual detectada para {numero_paciente}. Enviando mensaje...")
-
-                    mensaje = f"✅ *Cita Confirmada*\nHola, confirmamos el agendamiento de: *{titulo}* para la fecha {fecha_corta}."
-                    enviar_mensaje_texto(numero_paciente, mensaje)
-
-                    # Etiquetar el evento para evitar doble envío
-                    nueva_descripcion = f"{descripcion}\n\n[NOTIFICADO]".strip()
-                    evento['description'] = nueva_descripcion
-                    
-                    servicio.events().update(
-                        calendarId=CALENDAR_ID,
-                        eventId=evento['id'],
-                        body=evento
-                    ).execute()
-                    print(f"[BACKGROUND] Notificación enviada con éxito a {numero_paciente} y evento etiquetado.")
-
+            escanear_eventos_y_notificar()
         except Exception as e:
-            print(f"[ERROR BACKGROUND] {e}")
+            print(f"[BACKGROUND ERROR] Excepción inesperada: {e}")
         
-        # Pausa de 30 segundos entre escaneos
-        time.sleep(30)
+        time.sleep(INTERVALO_ESCANEO_SEGUNDOS)
