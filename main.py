@@ -1,7 +1,11 @@
 import database 
 import procesador
-from controllers import (
+from controllers.agendamiento import (
     iniciar_agendamiento,
+    mostrar_planes,
+    pedir_ubicacion_bogota,
+    pedir_modalidad,
+    mostrar_dias_disponibles,
     procesar_seleccion_tipo,
     procesar_seleccion_plan,
     procesar_seleccion_ubicacion,
@@ -16,8 +20,8 @@ from services.calendar_service import eliminar_evento
 def recibir_mensaje(telefono, texto, interactive_id=None):
     """
     Ruteador principal que procesa la petición recibida por WhatsApp,
-    manejando el menú de bienvenida, consulta, reagendamiento, cancelación
-    y la máquina de estados del flujo de agendamiento.
+    manejando el menú de bienvenida, consulta, reagendamiento, cancelación,
+    navegación hacia atrás y la máquina de estados.
     """
     estado, datos_temp = database.obtener_estado_usuario(telefono)
     texto_limpio = texto.strip().lower() if texto else ""
@@ -29,6 +33,11 @@ def recibir_mensaje(telefono, texto, interactive_id=None):
 
     # Determinamos el ID interactivo si proviene de botón o lista, de lo contrario usamos texto
     payload_id = interactive_id if interactive_id else texto_limpio
+
+    # --- MANEJO CENTRAL DE RETROCESO (BTN_ATRAS / ATRAS) ---
+    if payload_id in ['BTN_ATRAS', 'atras', 'atrás', 'volver', 'regresar', '00']:
+        retroceder_estado(telefono, estado, datos_temp)
+        return
 
     # --- 1. MENÚ PRINCIPAL (Estado INICIO) ---
     if estado == 'INICIO':
@@ -60,7 +69,6 @@ def recibir_mensaje(telefono, texto, interactive_id=None):
         elif payload_id in ['BTN_REAGENDAR', '3', 'reagendar', 'reagendar cita']:
             cita = database.obtener_cita_activa(telefono)
             if cita:
-                # Cancelamos evento anterior en Calendar si existe y reiniciamos el agendamiento
                 if cita.get('event_id'):
                     eliminar_evento(cita['event_id'])
                 database.eliminar_cita_por_telefono(telefono)
@@ -118,6 +126,53 @@ def recibir_mensaje(telefono, texto, interactive_id=None):
 
     # --- 4. MENÚ POR DEFECTO (Si no coincide con nada) ---
     mostrar_menu_principal(telefono)
+
+
+def retroceder_estado(telefono, estado_actual, datos_temp):
+    """
+    Evalúa el estado actual y devuelve al usuario exactamente al paso anterior,
+    conservando la información registrada en datos_temp.
+    """
+    if estado_actual == 'SELECCIONANDO_TIPO':
+        mostrar_menu_principal(telefono, "🔄 Regresamos al menú principal:")
+
+    elif estado_actual == 'SELECCIONANDO_PLAN':
+        iniciar_agendamiento(telefono)
+
+    elif estado_actual == 'SELECCIONANDO_BOGOTA':
+        # Si venía de Planes, vuelve a Planes; si no, vuelve a Selección de Tipo
+        if datos_temp.get('plan_nombre') and datos_temp['plan_nombre'] != 'VALORACION':
+            mostrar_planes(telefono, datos_temp)
+        else:
+            iniciar_agendamiento(telefono)
+
+    elif estado_actual == 'SELECCIONANDO_MODALIDAD':
+        pedir_ubicacion_bogota(telefono, datos_temp)
+
+    elif estado_actual == 'SELECCIONANDO_FECHA':
+        # Si la modalidad se fijó por estar fuera de Bogotá, vuelve a ubicación
+        if datos_temp.get('en_bogota') is False:
+            pedir_ubicacion_bogota(telefono, datos_temp)
+        # Si la cita es Valoración Inicial (que fuerza virtual de entrada), vuelve a selección de tipo
+        elif datos_temp.get('tipo_cita') == 'Valoración Inicial':
+            iniciar_agendamiento(telefono)
+        else:
+            pedir_modalidad(telefono, datos_temp)
+
+    elif estado_actual == 'SELECCIONANDO_HORA':
+        mostrar_dias_disponibles(telefono, datos_temp)
+
+    elif estado_actual == 'ESPERANDO_NOMBRE':
+        # Reobtiene las horas para la fecha previamente seleccionada
+        fecha_iso = datos_temp.get('fecha_iso')
+        fecha_str = datos_temp.get('fecha_str', fecha_iso)
+        if fecha_iso:
+            procesar_seleccion_fecha(telefono, f"FECHA_{fecha_iso}", datos_temp)
+        else:
+            mostrar_dias_disponibles(telefono, datos_temp)
+
+    else:
+        mostrar_menu_principal(telefono)
 
 
 def mostrar_menu_principal(telefono, encabezado="👋 ¡Bienvenido al asistente de agendamiento médico!"):

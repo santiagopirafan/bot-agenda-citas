@@ -11,8 +11,8 @@ from config import PRECIO_VALORACION, PRECIO_PLAN_1, PRECIO_PLAN_2, PRECIO_PLAN_
 
 def iniciar_agendamiento(telefono):
     """
-    Punto de entrada: Cambia el estado en la base de datos a SELECCIONANDO_TIPO
-    y despliega las opciones iniciales de consulta con 3 botones.
+    Punto de entrada: Cambia el estado a SELECCIONANDO_TIPO
+    y despliega las opciones iniciales agregando opción de Menú Principal.
     """
     database.guardar_estado_usuario(telefono, "SELECCIONANDO_TIPO", {})
     
@@ -34,8 +34,7 @@ def iniciar_agendamiento(telefono):
 
 def procesar_seleccion_tipo(telefono, respuesta_id):
     """
-    Procesa la elección. La Valoración Inicial va directo a calendario (Virtual),
-    mientras que la Segunda Valoración y los Planes consultan ubicación.
+    Procesa la elección.
     """
     if respuesta_id == "TIPO_VAL_INICIAL":
         datos_temp = {
@@ -52,32 +51,31 @@ def procesar_seleccion_tipo(telefono, respuesta_id):
             "plan_nombre": "VALORACION",
             "citas_restantes": 1
         }
-        database.guardar_estado_usuario(telefono, "SELECCIONANDO_BOGOTA", datos_temp)
-        
-        texto = "¿Te encuentras en la ciudad de Bogotá para una atención presencial o prefieres consulta virtual?"
-        botones = [
-            ("UBICACION_BOGOTA", "Estoy en Bogotá"),
-            ("UBICACION_FUERA", "Fuera de Bogotá")
-        ]
-        enviar_botones_interactivos(telefono, texto, botones)
+        pedir_ubicacion_bogota(telefono, datos_temp)
 
     elif respuesta_id == "TIPO_PLANES":
-        database.guardar_estado_usuario(telefono, "SELECCIONANDO_PLAN", {})
-        
-        texto = "📦 *Planes de Control Disponibles:*\n\nSelecciona el paquete que mejor se adapte a tus necesidades:"
-        opciones = [
-            {"id": "PLAN_1", "title": "Plan 1 Cita", "description": f"${PRECIO_PLAN_1:,.0f} COP"},
-            {"id": "PLAN_2", "title": "Plan 3 Citas", "description": f"${PRECIO_PLAN_2:,.0f} COP"},
-            {"id": "PLAN_3", "title": "Plan 5 Citas", "description": f"${PRECIO_PLAN_3:,.0f} COP"}
-        ]
-        enviar_lista_interactiva(telefono, texto, "Ver Planes", "Planes Disponibles", opciones)
+        mostrar_planes(telefono, {})
     else:
         enviar_mensaje_texto(telefono, "⚠️ Por favor, selecciona una opción válida de los botones.")
 
 
+def mostrar_planes(telefono, datos_temp):
+    """Muestra la lista de paquetes con opción de volver."""
+    database.guardar_estado_usuario(telefono, "SELECCIONANDO_PLAN", datos_temp)
+    
+    texto = "📦 *Planes de Control Disponibles:*\n\nSelecciona el paquete que mejor se adapte a tus necesidades:"
+    opciones = [
+        {"id": "PLAN_1", "title": "Plan 1 Cita", "description": f"${PRECIO_PLAN_1:,.0f} COP"},
+        {"id": "PLAN_2", "title": "Plan 3 Citas", "description": f"${PRECIO_PLAN_2:,.0f} COP"},
+        {"id": "PLAN_3", "title": "Plan 5 Citas", "description": f"${PRECIO_PLAN_3:,.0f} COP"},
+        {"id": "BTN_ATRAS", "title": "↩️ Volver Atrás", "description": "Regresar a Tipos de Servicio"}
+    ]
+    enviar_lista_interactiva(telefono, texto, "Ver Planes", "Planes Disponibles", opciones)
+
+
 def procesar_seleccion_plan(telefono, respuesta_id, datos_temp):
     """
-    Procesa el plan de control seleccionado y consulta la ubicación/modalidad.
+    Procesa el plan de control seleccionado.
     """
     mapa_planes = {
         "PLAN_1": {"nombre": "Plan 1 Cita", "citas": 1},
@@ -91,16 +89,22 @@ def procesar_seleccion_plan(telefono, respuesta_id, datos_temp):
         datos_temp["plan_nombre"] = respuesta_id
         datos_temp["citas_restantes"] = plan_info["citas"]
         
-        database.guardar_estado_usuario(telefono, "SELECCIONANDO_BOGOTA", datos_temp)
-        
-        texto = "¿Te encuentras en Bogotá para tomar la atención de tu plan presencialmente o de forma virtual?"
-        botones = [
-            ("UBICACION_BOGOTA", "Estoy en Bogotá"),
-            ("UBICACION_FUERA", "Fuera de Bogotá")
-        ]
-        enviar_botones_interactivos(telefono, texto, botones)
+        pedir_ubicacion_bogota(telefono, datos_temp)
     else:
         enviar_mensaje_texto(telefono, "⚠️ Por favor, selecciona un plan válido de la lista.")
+
+
+def pedir_ubicacion_bogota(telefono, datos_temp):
+    """Solicita la ubicación guardando el estado."""
+    database.guardar_estado_usuario(telefono, "SELECCIONANDO_BOGOTA", datos_temp)
+    
+    texto = "¿Te encuentras en la ciudad de Bogotá para una atención presencial o prefieres consulta virtual?"
+    botones = [
+        ("UBICACION_BOGOTA", "Estoy en Bogotá"),
+        ("UBICACION_FUERA", "Fuera de Bogotá"),
+        ("BTN_ATRAS", "↩️ Volver Atrás")
+    ]
+    enviar_botones_interactivos(telefono, texto, botones)
 
 
 def procesar_seleccion_ubicacion(telefono, respuesta_id, datos_temp):
@@ -108,13 +112,7 @@ def procesar_seleccion_ubicacion(telefono, respuesta_id, datos_temp):
     Determina si la cita permite Presencial/Virtual o fuerza Virtual según la ubicación.
     """
     if respuesta_id == "UBICACION_BOGOTA":
-        database.guardar_estado_usuario(telefono, "SELECCIONANDO_MODALIDAD", datos_temp)
-        texto = "📍 *Elige la modalidad de tu atención:*\n\n• *Presencial:* Atención en consultorio (días pares).\n• *Virtual:* Consulta por videollamada (días impares)."
-        botones = [
-            ("MOD_PRESENCIAL", "🏢 Presencial"),
-            ("MOD_VIRTUAL", "💻 Virtual")
-        ]
-        enviar_botones_interactivos(telefono, texto, botones)
+        pedir_modalidad(telefono, datos_temp)
     elif respuesta_id == "UBICACION_FUERA":
         datos_temp["modalidad"] = "VIRTUAL"
         mostrar_dias_disponibles(telefono, datos_temp)
@@ -122,9 +120,21 @@ def procesar_seleccion_ubicacion(telefono, respuesta_id, datos_temp):
         enviar_mensaje_texto(telefono, "⚠️ Por favor, selecciona tu ubicación con los botones.")
 
 
+def pedir_modalidad(telefono, datos_temp):
+    """Solicita la modalidad guardando el estado."""
+    database.guardar_estado_usuario(telefono, "SELECCIONANDO_MODALIDAD", datos_temp)
+    texto = "📍 *Elige la modalidad de tu atención:*\n\n• *Presencial:* Atención en consultorio (días pares).\n• *Virtual:* Consulta por videollamada (días impares)."
+    botones = [
+        ("MOD_PRESENCIAL", "🏢 Presencial"),
+        ("MOD_VIRTUAL", "💻 Virtual"),
+        ("BTN_ATRAS", "↩️ Volver Atrás")
+    ]
+    enviar_botones_interactivos(telefono, texto, botones)
+
+
 def procesar_seleccion_modalidad(telefono, respuesta_id, datos_temp):
     """
-    Guarda la modalidad (PRESENCIAL o VIRTUAL) y despliega el calendario respetando pares/impares.
+    Guarda la modalidad (PRESENCIAL o VIRTUAL) y despliega el calendario.
     """
     if respuesta_id not in ["MOD_PRESENCIAL", "MOD_VIRTUAL"]:
         enviar_mensaje_texto(telefono, "⚠️ Selecciona una modalidad válida.")
@@ -136,26 +146,38 @@ def procesar_seleccion_modalidad(telefono, respuesta_id, datos_temp):
 
 def mostrar_dias_disponibles(telefono, datos_temp):
     """
-    Consulta días disponibles en Google Calendar según reglas de agenda y guarda el estado.
+    Consulta días disponibles e incluye la opción de retroceso en la lista.
     """
     modalidad = datos_temp.get("modalidad", "VIRTUAL")
     dias = obtener_dias_disponibles(modalidad=modalidad)
     
     if not dias:
-        enviar_mensaje_texto(telefono, "❌ No hay días disponibles en las próximas semanas para esta modalidad.")
+        botones = [("BTN_ATRAS", "↩️ Volver Atrás")]
+        enviar_botones_interactivos(
+            telefono, 
+            "❌ No hay días disponibles en las próximas semanas para esta modalidad.", 
+            botones
+        )
         return
 
     datos_temp["dias_opciones"] = dias
     database.guardar_estado_usuario(telefono, "SELECCIONANDO_FECHA", datos_temp)
     
     opciones = []
-    for d in dias:
+    # Reservamos el último slot de la lista para el botón Atrás (límite Meta)
+    for d in dias[:9]:
         opciones.append({
             "id": f"FECHA_{d['fecha_iso']}",
             "title": d['fecha_str'][:24],
             "description": f"Atención {modalidad.capitalize()}"
         })
         
+    opciones.append({
+        "id": "BTN_ATRAS",
+        "title": "↩️ Volver Atrás",
+        "description": "Regresar al paso anterior"
+    })
+    
     texto = f"📅 *Días disponibles ({modalidad.lower()}):*\n\nSelecciona la fecha que prefieras:"
     enviar_lista_interactiva(telefono, texto, "Ver Días", "Fechas Disponibles", opciones)
 
@@ -181,27 +203,37 @@ def procesar_seleccion_fecha(telefono, respuesta_id, datos_temp):
     horas = obtener_horas_disponibles(fecha_iso, modalidad=modalidad)
     
     if not horas:
-        enviar_mensaje_texto(telefono, f"❌ No quedan horarios disponibles para el {fecha_str}. Selecciona otra fecha.")
-        mostrar_dias_disponibles(telefono, datos_temp)
+        botones = [("BTN_ATRAS", "↩️ Elegir otra fecha")]
+        enviar_botones_interactivos(
+            telefono, 
+            f"❌ No quedan horarios disponibles para el {fecha_str}.", 
+            botones
+        )
         return
 
     datos_temp["horas_opciones"] = horas
     database.guardar_estado_usuario(telefono, "SELECCIONANDO_HORA", datos_temp)
     
     opciones = []
-    for h in horas:
+    for h in horas[:9]:
         opciones.append({
             "id": f"HORA_{h['hora_iso']}--{h['hora_str']}",
             "title": h['hora_str'][:24]
         })
         
+    opciones.append({
+        "id": "BTN_ATRAS",
+        "title": "↩️ Volver Atrás",
+        "description": "Regresar a selección de fecha"
+    })
+    
     texto = f"⏰ *Horarios disponibles para el {fecha_str}:*"
     enviar_lista_interactiva(telefono, texto, "Ver Horas", "Horarios", opciones)
 
 
 def procesar_seleccion_hora(telefono, respuesta_id, datos_temp):
     """
-    Desempaqueta el ID de la hora y solicita el nombre completo del paciente.
+    Desempaqueta el ID de la hora y solicita el nombre completo.
     """
     if not respuesta_id.startswith("HORA_"):
         enviar_mensaje_texto(telefono, "⚠️ Selecciona un horario válido.")
@@ -219,14 +251,15 @@ def procesar_seleccion_hora(telefono, respuesta_id, datos_temp):
     datos_temp["hora_str"] = hora_str
     
     database.guardar_estado_usuario(telefono, "ESPERANDO_NOMBRE", datos_temp)
-    enviar_mensaje_texto(telefono, "✍️ Por favor, escribe el *Nombre Completo* del paciente que tomará la consulta:")
+    
+    botones = [("BTN_ATRAS", "↩️ Cambiar Hora")]
+    texto = "✍️ Por favor, escribe el *Nombre Completo* del paciente que tomará la consulta:"
+    enviar_botones_interactivos(telefono, texto, botones)
 
 
 def procesar_nombre_paciente(telefono, nombre, datos_temp):
     """
-    Registra la cita. Si es virtual, envía link de pago y queda pendiente. 
-    Si es presencial, agenda directamente en Calendar, verifica la creación 
-    y avisa del pago en efectivo en recepción.
+    Registra la cita respetando la lógica original de presencial y virtual.
     """
     paciente_nombre = nombre.strip().title()
     modalidad = datos_temp.get("modalidad", "VIRTUAL")
@@ -280,7 +313,6 @@ def procesar_nombre_paciente(telefono, nombre, datos_temp):
                 modalidad=modalidad
             )
             
-            # Desempaquetado seguro idéntico a app.py
             if isinstance(res_cal, tuple):
                 event_id, meet_link = res_cal
             else:
@@ -290,9 +322,8 @@ def procesar_nombre_paciente(telefono, nombre, datos_temp):
             print(f"[ERROR CALENDAR PRESENCIAL] {e}")
             enviar_mensaje_texto(telefono, "❌ Lo siento, ocurrió un error al intentar registrar tu cita en el calendario. Por favor, intenta agendar nuevamente en unos minutos.")
             database.guardar_estado_usuario(telefono, "INICIO", {})
-            return # Cortamos la ejecución si Calendar falla
+            return
 
-        # Solo si Calendar nos devuelve un event_id válido, guardamos en base de datos
         if event_id:
             data_cita = {
                 'telefono': telefono,
@@ -303,17 +334,14 @@ def procesar_nombre_paciente(telefono, nombre, datos_temp):
                 'fecha_str': datos_temp.get("fecha_str"),
                 'hora_iso': datos_temp.get("hora_iso"),
                 'hora_str': datos_temp.get("hora_str"),
-                'estado': "PENDIENTE_PAGO", # Obligatorio para que confirmar_cita_pagada la detecte
+                'estado': "PENDIENTE_PAGO",
                 'plan_nombre': plan_nombre,
                 'citas_restantes': citas_restantes,
                 'event_id': None,
                 'meet_link': None
             }
             
-            # 1. Guardamos como pendiente para resetear cualquier cita anterior
             database.guardar_cita_pendiente(data_cita)
-            
-            # 2. Inyectamos el event_id y la pasamos a CONFIRMADA
             database.confirmar_cita_pagada(telefono, event_id, meet_link)
 
             mensaje = (
