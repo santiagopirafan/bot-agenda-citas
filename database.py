@@ -94,7 +94,7 @@ def guardar_cita_pendiente(data):
 def obtener_cita_activa(telefono):
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM citas WHERE telefono = ? AND estado IN ('PAGADO', 'PRESENCIAL_PENDIENTE', 'AGENDADO_MANUAL') ORDER BY id DESC LIMIT 1",
+            "SELECT * FROM citas WHERE telefono = ? AND estado IN ('PAGADO', 'AGENDADO_MANUAL') ORDER BY id DESC LIMIT 1",
             (telefono,)
         ).fetchone()
         return dict(row) if row else None

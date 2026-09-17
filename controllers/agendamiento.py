@@ -109,7 +109,7 @@ def mostrar_planes(telefono, datos_temp):
     
     texto = "📦 *Controles Disponibles:*\n\nSelecciona la opción que mejor se adapte a tus necesidades:"
     opciones = [
-        {"id": "PLAN_1", "title": "Primer Control", "description": f"${PRECIO_PLAN_1:,.0f} COP (1 Control)"},
+        {"id": "PLAN_1", "title": "1 Control", "description": f"${PRECIO_PLAN_1:,.0f} COP (1 Control)"},
         {"id": "PLAN_2", "title": "3 Controles", "description": f"${PRECIO_PLAN_2:,.0f} COP (Paquete)"},
         {"id": "PLAN_3", "title": "5 Controles", "description": f"${PRECIO_PLAN_3:,.0f} COP (Paquete)"},
         {"id": "BTN_ATRAS", "title": "↩️ Volver Atrás", "description": "Regresar a Modalidad"}
@@ -122,7 +122,7 @@ def procesar_seleccion_plan(telefono, respuesta_id, datos_temp):
     Procesa la opción de control seleccionada y solicita la ubicación.
     """
     mapa_planes = {
-        "PLAN_1": {"nombre": "Primer Control", "citas": 1},
+        "PLAN_1": {"nombre": "1 Control", "citas": 1},
         "PLAN_2": {"nombre": "3 Controles", "citas": 3},
         "PLAN_3": {"nombre": "5 Controles", "citas": 5}
     }
