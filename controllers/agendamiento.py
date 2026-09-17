@@ -23,10 +23,12 @@ def iniciar_agendamiento(telefono):
         f"3️⃣ *Planes de Control:* Opciones de paquetes con descuento."
     )
     
+    # Se agrega la cuarta opción para regresar directamente al menú
     botones = [
         ("TIPO_VAL_INICIAL", "1. Val. Inicial"),
         ("TIPO_SEGUNDA_VAL", "2. Segunda Val."),
-        ("TIPO_PLANES", "3. Planes")
+        ("TIPO_PLANES", "3. Planes"),
+        ("BTN_ATRAS", "↩️ Menú Principal")
     ]
     
     enviar_botones_interactivos(telefono, texto, botones)
@@ -55,6 +57,11 @@ def procesar_seleccion_tipo(telefono, respuesta_id):
 
     elif respuesta_id == "TIPO_PLANES":
         mostrar_planes(telefono, {})
+
+    elif respuesta_id == "BTN_ATRAS":
+        # Se captura en main.py mediante retroceder_estado
+        pass
+
     else:
         enviar_mensaje_texto(telefono, "⚠️ Por favor, selecciona una opción válida de los botones.")
 
