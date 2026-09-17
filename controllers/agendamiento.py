@@ -26,7 +26,7 @@ def iniciar_agendamiento(telefono):
     opciones = [
         {"id": "TIPO_VAL_INICIAL", "title": "1. Valoración Inicial", "description": f"${PRECIO_VALORACION:,.0f} COP (Virtual)"},
         {"id": "TIPO_SEGUNDA_VAL", "title": "2. Segunda Valoración", "description": f"${PRECIO_VALORACION:,.0f} COP"},
-        {"id": "TIPO_PLANES", "title": "3. Controles", "description": "Paquetes de controles con descuento"},
+        {"id": "TIPO_PLANES", "title": "3. Controles", "description": ""},
         {"id": "BTN_ATRAS", "title": "↩️ Menú Principal", "description": "Regresar al menú principal"}
     ]
     
