@@ -152,15 +152,18 @@ def registrar_notificacion_enviada(event_id):
         conn.execute("INSERT OR IGNORE INTO notificaciones_enviadas (event_id) VALUES (?)", (event_id,))
         conn.commit()
 
+def registrar_notificacion(*args, **kwargs):
+    """Alias flexible compatible con múltiples parámetros para el escáner de segundo plano."""
+    event_id = kwargs.get('event_id') or (args[0] if args else None)
+    if event_id:
+        registrar_notificacion_enviada(event_id)
+    return True
+
 def obtener_todas_notificaciones(limite=100):
     """Obtiene el historial de citas y notificaciones registradas."""
     with get_connection() as conn:
         rows = conn.execute("SELECT * FROM citas ORDER BY id DESC LIMIT ?", (limite,)).fetchall()
         return [dict(r) for r in rows]
-
-def registrar_notificacion(event_id):
-    """Alias para compatibilidad con el escáner de segundo plano."""
-    return registrar_notificacion_enviada(event_id)
 
 # Inicializar BD al importar la base de datos
 init_db()

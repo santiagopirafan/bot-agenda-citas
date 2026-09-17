@@ -120,7 +120,7 @@ def obtener_dias_disponibles(modalidad="VIRTUAL", dias_a_evaluar=14):
                 elif any(k in titulo for k in ['habilitar', 'abierto', 'excepcion']):
                     habilitado_manual = True
 
-        # El día califica si fue habilitado manualmente O si cumple la regla par/impar y no está bloqueado
+        # El día califies si fue habilitado manualmente O si cumple la regla par/impar y no está bloqueado
         if not bloqueado and (habilitado_manual or es_dia_habilitado(fecha_eval, modalidad)):
             dias_disponibles.append({
                 "fecha_iso": fecha_str,
@@ -199,8 +199,7 @@ def obtener_horas_disponibles(fecha_str, modalidad="VIRTUAL"):
 
 def agendar_cita(resumen, fecha, hora_inicio, descripcion, modalidad="VIRTUAL"):
     """
-    Crea un evento en Google Calendar. Al usar Service Accounts con un Gmail gratuito,
-    se asigna un enlace fijo de Meet para evitar el bloqueo de la API.
+    Crea un evento en Google Calendar. Asigna el enlace de Meet desde variable de entorno o fallback.
     """
     service = obtener_servicio()
 
@@ -209,8 +208,7 @@ def agendar_cita(resumen, fecha, hora_inicio, descripcion, modalidad="VIRTUAL"):
     hora_fin = f"{hora + 1:02d}:{minuto:02d}"
     end_datetime = f"{fecha}T{hora_fin}:00-05:00"
 
-    # ⚠️ IMPORTANTE: Genera un enlace de Meet permanente desde tu cuenta y ponlo aquí
-    LINK_MEET_FIJO = "https://meet.google.com/tu-enlace-fijo" 
+    LINK_MEET_FIJO = os.getenv("GOOGLE_MEET_LINK", "https://meet.google.com/tu-enlace-fijo")
 
     if modalidad == "VIRTUAL":
         descripcion += f"\n\n💻 Enlace de la videollamada: {LINK_MEET_FIJO}"
@@ -229,15 +227,12 @@ def agendar_cita(resumen, fecha, hora_inicio, descripcion, modalidad="VIRTUAL"):
     }
 
     try:
-        # Se elimina 'conferenceData' para evitar el HttpError 400
         evento_creado = service.events().insert(
             calendarId=CALENDAR_ID,
             body=evento_body
         ).execute()
 
         event_id = evento_creado.get('id')
-        
-        # Asignamos el enlace fijo para que llegue al mensaje final de WhatsApp
         meet_link = LINK_MEET_FIJO if modalidad == "VIRTUAL" else None
 
         print(f"[CALENDAR SUCCESS] Cita {modalidad.capitalize()} creada: ID {event_id}")
@@ -260,7 +255,6 @@ def eliminar_evento(event_id):
         ).execute()
         return True
     except HttpError as e:
-        # Si el evento ya fue borrado previamente (404 o 410)
         if e.resp.status in [404, 410]:
             return True
         print(f"[ERROR CALENDAR DELETE] {e}")

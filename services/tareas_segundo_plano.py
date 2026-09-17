@@ -15,10 +15,7 @@ def extraer_telefono_descripcion(descripcion):
     if not descripcion:
         return None
 
-    # Elimina caracteres que no sean dígitos
     solo_numeros = re.sub(r'[^\d]', '', descripcion)
-
-    # Busca número celular de 10 dígitos (3XX...) o con prefijo 57 (573XX...)
     coincidencia = re.search(r'(573\d{9}|3\d{9})', solo_numeros)
     
     if coincidencia:
