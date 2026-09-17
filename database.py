@@ -42,6 +42,15 @@ def init_db():
                 creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # Tabla de notificaciones enviadas (Para evitar duplicados del escáner)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS notificaciones_enviadas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id TEXT UNIQUE NOT NULL,
+                enviado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         conn.commit()
 
 # --- GESTIÓN DE ESTADOS DE USUARIOS ---
@@ -128,6 +137,26 @@ def existe_evento_registrado(event_id):
     with get_connection() as conn:
         row = conn.execute("SELECT id FROM citas WHERE event_id = ?", (event_id,)).fetchone()
         return row is not None
+
+# --- DEDUPLICACIÓN DE ESCÁNER DE CALENDARIO Y NOTIFICACIONES ---
+
+def evento_ya_notificado(event_id):
+    """Verifica si un evento de Google Calendar ya fue procesado por el escáner."""
+    with get_connection() as conn:
+        row = conn.execute("SELECT 1 FROM notificaciones_enviadas WHERE event_id = ?", (event_id,)).fetchone()
+        return row is not None
+
+def registrar_notificacion_enviada(event_id):
+    """Registra que un evento ya fue procesado para no duplicar mensajes."""
+    with get_connection() as conn:
+        conn.execute("INSERT OR IGNORE INTO notificaciones_enviadas (event_id) VALUES (?)", (event_id,))
+        conn.commit()
+
+def obtener_todas_notificaciones(limite=100):
+    """Obtiene el historial de citas y notificaciones registradas."""
+    with get_connection() as conn:
+        rows = conn.execute("SELECT * FROM citas ORDER BY id DESC LIMIT ?", (limite,)).fetchall()
+        return [dict(r) for r in rows]
 
 # Inicializar BD al importar la base de datos
 init_db()
