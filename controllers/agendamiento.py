@@ -12,7 +12,7 @@ from config import PRECIO_VALORACION, PRECIO_PLAN_1, PRECIO_PLAN_2, PRECIO_PLAN_
 def iniciar_agendamiento(telefono):
     """
     Punto de entrada: Cambia el estado a SELECCIONANDO_TIPO
-    y despliega las opciones mediante lista interactiva (soporta hasta 10 opciones).
+    y despliega las opciones mediante lista interactiva.
     """
     database.guardar_estado_usuario(telefono, "SELECCIONANDO_TIPO", {})
     
@@ -20,13 +20,13 @@ def iniciar_agendamiento(telefono):
         "🏥 *Elige el tipo de atención que deseas agendar:*\n\n"
         f"1️⃣ *Valoración Inicial (Solo Virtual):* ${PRECIO_VALORACION:,.0f} COP\n"
         f"2️⃣ *Segunda Valoración:* ${PRECIO_VALORACION:,.0f} COP\n"
-        f"3️⃣ *Planes de Control:* Opciones de paquetes con descuento."
+        f"3️⃣ *Controles:* Opciones de paquetes con descuento."
     )
     
     opciones = [
         {"id": "TIPO_VAL_INICIAL", "title": "1. Valoración Inicial", "description": f"${PRECIO_VALORACION:,.0f} COP (Virtual)"},
         {"id": "TIPO_SEGUNDA_VAL", "title": "2. Segunda Valoración", "description": f"${PRECIO_VALORACION:,.0f} COP"},
-        {"id": "TIPO_PLANES", "title": "3. Planes de Control", "description": "Paquetes de citas con descuento"},
+        {"id": "TIPO_PLANES", "title": "3. Controles", "description": "Paquetes de controles con descuento"},
         {"id": "BTN_ATRAS", "title": "↩️ Menú Principal", "description": "Regresar al menú principal"}
     ]
     
@@ -35,7 +35,7 @@ def iniciar_agendamiento(telefono):
 
 def procesar_seleccion_tipo(telefono, respuesta_id):
     """
-    Procesa la elección.
+    Procesa la elección del tipo de servicio.
     """
     if respuesta_id == "TIPO_VAL_INICIAL":
         datos_temp = {
@@ -62,42 +62,42 @@ def procesar_seleccion_tipo(telefono, respuesta_id):
         pass
 
     else:
-        enviar_mensaje_texto(telefono, "⚠️ Por favor, selecciona una opción válida de los botones.")
+        enviar_mensaje_texto(telefono, "⚠️ Por favor, selecciona una opción válida de la lista.")
 
 
 def mostrar_planes(telefono, datos_temp):
-    """Muestra la lista de paquetes con opción de volver."""
+    """Muestra la lista de opciones de controles con opción de volver."""
     database.guardar_estado_usuario(telefono, "SELECCIONANDO_PLAN", datos_temp)
     
-    texto = "📦 *Planes de Control Disponibles:*\n\nSelecciona el paquete que mejor se adapte a tus necesidades:"
+    texto = "📦 *Controles Disponibles:*\n\nSelecciona la opción que mejor se adapte a tus necesidades:"
     opciones = [
-        {"id": "PLAN_1", "title": "Plan 1 Cita", "description": f"${PRECIO_PLAN_1:,.0f} COP"},
-        {"id": "PLAN_2", "title": "Plan 3 Citas", "description": f"${PRECIO_PLAN_2:,.0f} COP"},
-        {"id": "PLAN_3", "title": "Plan 5 Citas", "description": f"${PRECIO_PLAN_3:,.0f} COP"},
+        {"id": "PLAN_1", "title": "1 Control", "description": f"${PRECIO_PLAN_1:,.0f} COP (1 Control)"},
+        {"id": "PLAN_2", "title": "3 Controles", "description": f"${PRECIO_PLAN_2:,.0f} COP (Paquete)"},
+        {"id": "PLAN_3", "title": "5 Controles", "description": f"${PRECIO_PLAN_3:,.0f} COP (Paquete)"},
         {"id": "BTN_ATRAS", "title": "↩️ Volver Atrás", "description": "Regresar a Tipos de Servicio"}
     ]
-    enviar_lista_interactiva(telefono, texto, "Ver Planes", "Planes Disponibles", opciones)
+    enviar_lista_interactiva(telefono, texto, "Ver Controles", "Opciones de Controles", opciones)
 
 
 def procesar_seleccion_plan(telefono, respuesta_id, datos_temp):
     """
-    Procesa el plan de control seleccionado.
+    Procesa la opción de control seleccionada.
     """
     mapa_planes = {
-        "PLAN_1": {"nombre": "Plan 1 Cita", "citas": 1},
-        "PLAN_2": {"nombre": "Plan 3 Citas", "citas": 3},
-        "PLAN_3": {"nombre": "Plan 5 Citas", "citas": 5}
+        "PLAN_1": {"nombre": "1 Control", "citas": 1},
+        "PLAN_2": {"nombre": "3 Controles", "citas": 3},
+        "PLAN_3": {"nombre": "5 Controles", "citas": 5}
     }
     
     if respuesta_id in mapa_planes:
         plan_info = mapa_planes[respuesta_id]
-        datos_temp["tipo_cita"] = f"Plan de Control ({plan_info['nombre']})"
+        datos_temp["tipo_cita"] = f"Control ({plan_info['nombre']})"
         datos_temp["plan_nombre"] = respuesta_id
         datos_temp["citas_restantes"] = plan_info["citas"]
         
         pedir_ubicacion_bogota(telefono, datos_temp)
     else:
-        enviar_mensaje_texto(telefono, "⚠️ Por favor, selecciona un plan válido de la lista.")
+        enviar_mensaje_texto(telefono, "⚠️ Por favor, selecciona una opción válida de controles.")
 
 
 def pedir_ubicacion_bogota(telefono, datos_temp):
