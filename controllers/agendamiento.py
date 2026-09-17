@@ -12,7 +12,7 @@ from config import PRECIO_VALORACION, PRECIO_PLAN_1, PRECIO_PLAN_2, PRECIO_PLAN_
 def iniciar_agendamiento(telefono):
     """
     Punto de entrada: Cambia el estado a SELECCIONANDO_TIPO
-    y despliega las opciones iniciales agregando opción de Menú Principal.
+    y despliega las opciones mediante lista interactiva (soporta hasta 10 opciones).
     """
     database.guardar_estado_usuario(telefono, "SELECCIONANDO_TIPO", {})
     
@@ -23,15 +23,14 @@ def iniciar_agendamiento(telefono):
         f"3️⃣ *Planes de Control:* Opciones de paquetes con descuento."
     )
     
-    # Textos de botones con menos de 20 caracteres cada uno:
-    botones = [
-        ("TIPO_VAL_INICIAL", "1. Val. Inicial"),
-        ("TIPO_SEGUNDA_VAL", "2. Segunda Val."),
-        ("TIPO_PLANES", "3. Planes"),
-        ("BTN_ATRAS", "↩️ Menú")  # 👈 Solo 8 caracteres
+    opciones = [
+        {"id": "TIPO_VAL_INICIAL", "title": "1. Valoración Inicial", "description": f"${PRECIO_VALORACION:,.0f} COP (Virtual)"},
+        {"id": "TIPO_SEGUNDA_VAL", "title": "2. Segunda Valoración", "description": f"${PRECIO_VALORACION:,.0f} COP"},
+        {"id": "TIPO_PLANES", "title": "3. Planes de Control", "description": "Paquetes de citas con descuento"},
+        {"id": "BTN_ATRAS", "title": "↩️ Menú Principal", "description": "Regresar al menú principal"}
     ]
     
-    enviar_botones_interactivos(telefono, texto, botones)
+    enviar_lista_interactiva(telefono, texto, "Ver Servicios", "Tipos de Atención", opciones)
 
 
 def procesar_seleccion_tipo(telefono, respuesta_id):
