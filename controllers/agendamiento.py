@@ -266,7 +266,7 @@ def procesar_seleccion_hora(telefono, respuesta_id, datos_temp):
     datos_temp["hora_iso"] = hora_iso
     datos_temp["hora_str"] = hora_str
     
-    # 👈 FLUJO DE REAGENDAMIENTO: Pedir confirmación final antes de borrar la cita anterior
+    # FLUJO DE REAGENDAMIENTO: Pedir confirmación final antes de borrar la cita anterior
     if datos_temp.get("reagendando"):
         database.guardar_estado_usuario(telefono, "CONFIRMANDO_REAGENDAMIENTO", datos_temp)
         
@@ -327,18 +327,39 @@ def procesar_confirmacion_reagendamiento(telefono, respuesta_id, datos_temp):
 
 def procesar_nombre_paciente(telefono, nombre, datos_temp):
     """
-    Registra la cita respetando la lógica original de presencial y virtual.
+    Registra la cita asignando el estado PAGADO si proviene de un reagendamiento.
     """
     paciente_nombre = nombre.strip().title()
     modalidad = datos_temp.get("modalidad", "VIRTUAL")
     tipo_cita = datos_temp.get("tipo_cita", "Valoración Inicial")
     plan_nombre = datos_temp.get("plan_nombre", "VALORACION")
     citas_restantes = datos_temp.get("citas_restantes", 1)
+    es_reagendamiento = datos_temp.get("reagendando", False)
 
     link_pago, precio = obtener_link_pago(plan_nombre)
 
     if modalidad == "VIRTUAL":
-        # Flujo Virtual: Pendiente de pago
+        event_id, meet_link = None, None
+        
+        # Si es reagendamiento virtual, re-agendamos en Calendar directamente
+        if es_reagendamiento:
+            try:
+                res_cal = agendar_cita(
+                    resumen=f"{tipo_cita} - {paciente_nombre}",
+                    fecha=datos_temp.get("fecha_iso"),
+                    hora_inicio=datos_temp.get("hora_iso"),
+                    descripcion=f"Paciente: {paciente_nombre}\nTeléfono: {telefono}\nModalidad: {modalidad}",
+                    modalidad=modalidad
+                )
+                if isinstance(res_cal, tuple):
+                    event_id, meet_link = res_cal
+                else:
+                    event_id = res_cal
+            except Exception as e:
+                print(f"[ERROR REAGENDAR CALENDAR VIRTUAL] {e}")
+
+        estado_final = "PAGADO" if es_reagendamiento else "PENDIENTE_PAGO"
+
         data_cita = {
             'telefono': telefono,
             'paciente': paciente_nombre,
@@ -348,23 +369,23 @@ def procesar_nombre_paciente(telefono, nombre, datos_temp):
             'fecha_str': datos_temp.get("fecha_str"),
             'hora_iso': datos_temp.get("hora_iso"),
             'hora_str': datos_temp.get("hora_str"),
-            'estado': "PENDIENTE_PAGO",
+            'estado': estado_final,
             'plan_nombre': plan_nombre,
             'citas_restantes': citas_restantes,
-            'event_id': None,
-            'meet_link': None
+            'event_id': event_id,
+            'meet_link': meet_link
         }
+        
         database.guardar_cita_pendiente(data_cita)
 
-        # Si viene de un reagendamiento exitoso
-        if datos_temp.get("reagendando"):
+        if es_reagendamiento:
             mensaje = (
                 f"✅ *Cita Virtual Reagendada Exitosamente*\n\n"
                 f"👤 *Paciente:* {paciente_nombre}\n"
                 f"📋 *Servicio:* {tipo_cita}\n"
                 f"📅 *Nueva Fecha:* {datos_temp.get('fecha_str')}\n"
                 f"⏰ *Nueva Hora:* {datos_temp.get('hora_str')}\n\n"
-                f"_Se ha actualizado tu información. Si ya habías pagado, tu pago cubrirá esta nueva fecha._"
+                f"_Se ha actualizado tu información correctamente en el sistema._"
             )
         else:
             mensaje = (
@@ -382,7 +403,7 @@ def procesar_nombre_paciente(telefono, nombre, datos_temp):
         database.guardar_estado_usuario(telefono, "INICIO", {})
 
     else:
-        # Flujo Presencial: Se agenda de inmediato
+        # Flujo Presencial: Se agenda directamente en Calendar
         event_id, meet_link = None, None
         try:
             res_cal = agendar_cita(
@@ -414,17 +435,16 @@ def procesar_nombre_paciente(telefono, nombre, datos_temp):
                 'fecha_str': datos_temp.get("fecha_str"),
                 'hora_iso': datos_temp.get("hora_iso"),
                 'hora_str': datos_temp.get("hora_str"),
-                'estado': "PENDIENTE_PAGO",
+                'estado': "PAGADO",
                 'plan_nombre': plan_nombre,
                 'citas_restantes': citas_restantes,
-                'event_id': None,
-                'meet_link': None
+                'event_id': event_id,
+                'meet_link': meet_link
             }
             
             database.guardar_cita_pendiente(data_cita)
-            database.confirmar_cita_pagada(telefono, event_id, meet_link)
 
-            if datos_temp.get("reagendando"):
+            if es_reagendamiento:
                 mensaje = (
                     f"✅ *Cita Presencial Reagendada Exitosamente*\n\n"
                     f"👤 *Paciente:* {paciente_nombre}\n"
