@@ -92,6 +92,10 @@ def guardar_cita_pendiente(data):
         conn.commit()
 
 def obtener_cita_activa(telefono):
+    """
+    Retorna la última cita confirmada/pagada.
+    Se ignoran explícitamente las pre-reservas sin pagar (PENDIENTE_PAGO).
+    """
     with get_connection() as conn:
         row = conn.execute(
             "SELECT * FROM citas WHERE telefono = ? AND estado IN ('PAGADO', 'AGENDADO_MANUAL') ORDER BY id DESC LIMIT 1",
@@ -126,8 +130,11 @@ def actualizar_evento_cita(cita_id, fecha_iso, fecha_str, hora_iso, hora_str, ev
         conn.commit()
 
 def eliminar_cita_por_telefono(telefono):
+    """
+    Busca la cita activa para recuperar su event_id y eliminar sus registros de la BD.
+    """
     with get_connection() as conn:
-        row = conn.execute("SELECT event_id FROM citas WHERE telefono = ? AND estado IN ('PAGADO', 'PRESENCIAL_PENDIENTE', 'AGENDADO_MANUAL')", (telefono,)).fetchone()
+        row = conn.execute("SELECT event_id FROM citas WHERE telefono = ? AND estado IN ('PAGADO', 'AGENDADO_MANUAL')", (telefono,)).fetchone()
         event_id = row["event_id"] if row else None
         conn.execute("DELETE FROM citas WHERE telefono = ?", (telefono,))
         conn.commit()
