@@ -55,36 +55,75 @@ def procesar_seleccion_tipo(telefono, respuesta_id):
         pedir_ubicacion_bogota(telefono, datos_temp)
 
     elif respuesta_id == "TIPO_PLANES":
-        mostrar_planes(telefono, {})
+        # 👈 NUEVO FLUJO: Muestra primero la modalidad Presencial / Virtual
+        datos_temp = {
+            "tipo_cita": "Control",
+            "plan_nombre": "PLAN_1",
+            "citas_restantes": 1
+        }
+        pedir_modalidad(telefono, datos_temp)
 
     elif respuesta_id == "BTN_ATRAS":
-        # Se captura en main.py mediante retroceder_estado
         pass
 
     else:
         enviar_mensaje_texto(telefono, "⚠️ Por favor, selecciona una opción válida de la lista.")
 
 
+def pedir_modalidad(telefono, datos_temp):
+    """Solicita la modalidad guardando el estado."""
+    database.guardar_estado_usuario(telefono, "SELECCIONANDO_MODALIDAD", datos_temp)
+    texto = "📍 *Elige la modalidad de tu atención:*\n\n• *Presencial:* Atención en consultorio (días pares).\n• *Virtual:* Consulta por videollamada (días impares)."
+    botones = [
+        ("MOD_PRESENCIAL", "🏢 Presencial"),
+        ("MOD_VIRTUAL", "💻 Virtual"),
+        ("BTN_ATRAS", "↩️ Volver Atrás")
+    ]
+    enviar_botones_interactivos(telefono, texto, botones)
+
+
+def procesar_seleccion_modalidad(telefono, respuesta_id, datos_temp):
+    """
+    Guarda la modalidad (PRESENCIAL o VIRTUAL).
+    - Presencial en Controles: Pasa directo a ver días disponibles.
+    - Virtual en Controles: Muestra la lista de paquetes de controles.
+    """
+    if respuesta_id not in ["MOD_PRESENCIAL", "MOD_VIRTUAL"]:
+        enviar_mensaje_texto(telefono, "⚠️ Selecciona una modalidad válida.")
+        return
+
+    modalidad_elegida = "PRESENCIAL" if respuesta_id == "MOD_PRESENCIAL" else "VIRTUAL"
+    datos_temp["modalidad"] = modalidad_elegida
+
+    if datos_temp.get("tipo_cita") == "Control":
+        if modalidad_elegida == "PRESENCIAL":
+            mostrar_dias_disponibles(telefono, datos_temp)
+        else:
+            mostrar_planes(telefono, datos_temp)
+    else:
+        mostrar_dias_disponibles(telefono, datos_temp)
+
+
 def mostrar_planes(telefono, datos_temp):
-    """Muestra la lista de opciones de controles con opción de volver."""
+    """Muestra la lista de paquetes de controles."""
     database.guardar_estado_usuario(telefono, "SELECCIONANDO_PLAN", datos_temp)
     
     texto = "📦 *Controles Disponibles:*\n\nSelecciona la opción que mejor se adapte a tus necesidades:"
     opciones = [
-        {"id": "PLAN_1", "title": "1 Control", "description": f"${PRECIO_PLAN_1:,.0f} COP (1 Control)"},
+        {"id": "PLAN_1", "title": "Primer Control", "description": f"${PRECIO_PLAN_1:,.0f} COP (1 Control)"},
         {"id": "PLAN_2", "title": "3 Controles", "description": f"${PRECIO_PLAN_2:,.0f} COP (Paquete)"},
         {"id": "PLAN_3", "title": "5 Controles", "description": f"${PRECIO_PLAN_3:,.0f} COP (Paquete)"},
-        {"id": "BTN_ATRAS", "title": "↩️ Volver Atrás", "description": "Regresar a Tipos de Servicio"}
+        {"id": "BTN_ATRAS", "title": "↩️ Volver Atrás", "description": "Regresar a Modalidad"}
     ]
     enviar_lista_interactiva(telefono, texto, "Ver Controles", "Opciones de Controles", opciones)
 
 
 def procesar_seleccion_plan(telefono, respuesta_id, datos_temp):
     """
-    Procesa la opción de control seleccionada.
+    Procesa la opción de control seleccionada y solicita la ubicación.
     """
     mapa_planes = {
-        "PLAN_1": {"nombre": "1 Control", "citas": 1},
+        "PLAN_1": {"nombre": "Primer Control", "citas": 1},
         "PLAN_2": {"nombre": "3 Controles", "citas": 3},
         "PLAN_3": {"nombre": "5 Controles", "citas": 5}
     }
@@ -104,7 +143,7 @@ def pedir_ubicacion_bogota(telefono, datos_temp):
     """Solicita la ubicación guardando el estado."""
     database.guardar_estado_usuario(telefono, "SELECCIONANDO_BOGOTA", datos_temp)
     
-    texto = "¿Te encuentras en la ciudad de Bogotá para una atención presencial o prefieres consulta virtual?"
+    texto = "¿Te encuentras en la ciudad de Bogotá para tu atención o en otra ubicación?"
     botones = [
         ("UBICACION_BOGOTA", "Estoy en Bogotá"),
         ("UBICACION_FUERA", "Fuera de Bogotá"),
@@ -115,39 +154,12 @@ def pedir_ubicacion_bogota(telefono, datos_temp):
 
 def procesar_seleccion_ubicacion(telefono, respuesta_id, datos_temp):
     """
-    Determina si la cita permite Presencial/Virtual o fuerza Virtual según la ubicación.
+    Determina la continuidad hacia el calendario tras responder ubicación.
     """
-    if respuesta_id == "UBICACION_BOGOTA":
-        pedir_modalidad(telefono, datos_temp)
-    elif respuesta_id == "UBICACION_FUERA":
-        datos_temp["modalidad"] = "VIRTUAL"
+    if respuesta_id in ["UBICACION_BOGOTA", "UBICACION_FUERA"]:
         mostrar_dias_disponibles(telefono, datos_temp)
     else:
         enviar_mensaje_texto(telefono, "⚠️ Por favor, selecciona tu ubicación con los botones.")
-
-
-def pedir_modalidad(telefono, datos_temp):
-    """Solicita la modalidad guardando el estado."""
-    database.guardar_estado_usuario(telefono, "SELECCIONANDO_MODALIDAD", datos_temp)
-    texto = "📍 *Elige la modalidad de tu atención:*\n\n• *Presencial:* Atención en consultorio (días pares).\n• *Virtual:* Consulta por videollamada (días impares)."
-    botones = [
-        ("MOD_PRESENCIAL", "🏢 Presencial"),
-        ("MOD_VIRTUAL", "💻 Virtual"),
-        ("BTN_ATRAS", "↩️ Volver Atrás")
-    ]
-    enviar_botones_interactivos(telefono, texto, botones)
-
-
-def procesar_seleccion_modalidad(telefono, respuesta_id, datos_temp):
-    """
-    Guarda la modalidad (PRESENCIAL o VIRTUAL) y despliega el calendario.
-    """
-    if respuesta_id not in ["MOD_PRESENCIAL", "MOD_VIRTUAL"]:
-        enviar_mensaje_texto(telefono, "⚠️ Selecciona una modalidad válida.")
-        return
-
-    datos_temp["modalidad"] = "PRESENCIAL" if respuesta_id == "MOD_PRESENCIAL" else "VIRTUAL"
-    mostrar_dias_disponibles(telefono, datos_temp)
 
 
 def mostrar_dias_disponibles(telefono, datos_temp):
@@ -170,7 +182,6 @@ def mostrar_dias_disponibles(telefono, datos_temp):
     database.guardar_estado_usuario(telefono, "SELECCIONANDO_FECHA", datos_temp)
     
     opciones = []
-    # Reservamos el último slot de la lista para el botón Atrás (límite Meta)
     for d in dias[:9]:
         opciones.append({
             "id": f"FECHA_{d['fecha_iso']}",
