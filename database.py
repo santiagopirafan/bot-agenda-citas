@@ -158,5 +158,9 @@ def obtener_todas_notificaciones(limite=100):
         rows = conn.execute("SELECT * FROM citas ORDER BY id DESC LIMIT ?", (limite,)).fetchall()
         return [dict(r) for r in rows]
 
+def registrar_notificacion(event_id):
+    """Alias para compatibilidad con el escáner de segundo plano."""
+    return registrar_notificacion_enviada(event_id)
+
 # Inicializar BD al importar la base de datos
 init_db()
