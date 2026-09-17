@@ -23,12 +23,12 @@ def iniciar_agendamiento(telefono):
         f"3️⃣ *Planes de Control:* Opciones de paquetes con descuento."
     )
     
-    # Se agrega la cuarta opción para regresar directamente al menú
+    # Textos de botones con menos de 20 caracteres cada uno:
     botones = [
         ("TIPO_VAL_INICIAL", "1. Val. Inicial"),
         ("TIPO_SEGUNDA_VAL", "2. Segunda Val."),
         ("TIPO_PLANES", "3. Planes"),
-        ("BTN_ATRAS", "↩️ Menú Principal")
+        ("BTN_ATRAS", "↩️ Menú")  # 👈 Solo 8 caracteres
     ]
     
     enviar_botones_interactivos(telefono, texto, botones)
