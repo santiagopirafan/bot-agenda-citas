@@ -12,6 +12,7 @@ from controllers.agendamiento import (
     procesar_seleccion_modalidad,
     procesar_seleccion_fecha,
     procesar_seleccion_hora,
+    procesar_confirmacion_reagendamiento,
     procesar_nombre_paciente
 )
 from services.whatsapp_service import enviar_mensaje_texto, enviar_botones_interactivos
@@ -65,15 +66,23 @@ def recibir_mensaje(telefono, texto, interactive_id=None):
             enviar_mensaje_texto(telefono, msg)
             return
 
-        # Opcion 3: REAGENDAR CITA
+        # Opcion 3: REAGENDAR CITA (Preserva cita hasta confirmar)
         elif payload_id in ['BTN_REAGENDAR', '3', 'reagendar', 'reagendar cita']:
             cita = database.obtener_cita_activa(telefono)
             if cita:
-                if cita.get('event_id'):
-                    eliminar_evento(cita['event_id'])
-                database.eliminar_cita_por_telefono(telefono)
-                enviar_mensaje_texto(telefono, "🔄 Vamos a reagendar tu cita. Por favor selecciona el nuevo horario:")
-                iniciar_agendamiento(telefono)
+                datos_reagendo = {
+                    "reagendando": True,
+                    "cita_id_previa": cita.get("id"),
+                    "event_id_previo": cita.get("event_id"),
+                    "paciente": cita.get("paciente"),
+                    "modalidad": cita.get("modalidad", "VIRTUAL"),
+                    "tipo_cita": cita.get("tipo_cita", "Control"),
+                    "plan_nombre": cita.get("plan_nombre", "PLAN_1"),
+                    "citas_restantes": cita.get("citas_restantes", 1)
+                }
+                
+                enviar_mensaje_texto(telefono, "🔄 Vamos a reagendar tu cita. Mantendremos la modalidad e información del paciente.")
+                mostrar_dias_disponibles(telefono, datos_reagendo)
             else:
                 enviar_mensaje_texto(telefono, "❌ No tienes citas activas para reagendar. Puedes agendar una cita nueva.")
             return
@@ -113,6 +122,10 @@ def recibir_mensaje(telefono, texto, interactive_id=None):
         procesar_seleccion_hora(telefono, payload_id, datos_temp)
         return
 
+    elif estado == 'CONFIRMANDO_REAGENDAMIENTO':
+        procesar_confirmacion_reagendamiento(telefono, payload_id, datos_temp)
+        return
+
     elif estado == 'ESPERANDO_NOMBRE':
         procesar_nombre_paciente(telefono, texto, datos_temp)
         return
@@ -140,7 +153,6 @@ def retroceder_estado(telefono, estado_actual, datos_temp):
         iniciar_agendamiento(telefono)
 
     elif estado_actual == 'SELECCIONANDO_BOGOTA':
-        # Si venía de Planes, vuelve a Planes; si no, vuelve a Selección de Tipo
         if datos_temp.get('plan_nombre') and datos_temp['plan_nombre'] != 'VALORACION':
             mostrar_planes(telefono, datos_temp)
         else:
@@ -150,10 +162,10 @@ def retroceder_estado(telefono, estado_actual, datos_temp):
         pedir_ubicacion_bogota(telefono, datos_temp)
 
     elif estado_actual == 'SELECCIONANDO_FECHA':
-        # Si la modalidad se fijó por estar fuera de Bogotá, vuelve a ubicación
-        if datos_temp.get('en_bogota') is False:
+        if datos_temp.get('reagendando'):
+            mostrar_menu_principal(telefono, "🚫 Reagendamiento cancelado. Regresamos al menú principal:")
+        elif datos_temp.get('en_bogota') is False:
             pedir_ubicacion_bogota(telefono, datos_temp)
-        # Si la cita es Valoración Inicial (que fuerza virtual de entrada), vuelve a selección de tipo
         elif datos_temp.get('tipo_cita') == 'Valoración Inicial':
             iniciar_agendamiento(telefono)
         else:
@@ -162,10 +174,11 @@ def retroceder_estado(telefono, estado_actual, datos_temp):
     elif estado_actual == 'SELECCIONANDO_HORA':
         mostrar_dias_disponibles(telefono, datos_temp)
 
+    elif estado_actual == 'CONFIRMANDO_REAGENDAMIENTO':
+        mostrar_dias_disponibles(telefono, datos_temp)
+
     elif estado_actual == 'ESPERANDO_NOMBRE':
-        # Reobtiene las horas para la fecha previamente seleccionada
         fecha_iso = datos_temp.get('fecha_iso')
-        fecha_str = datos_temp.get('fecha_str', fecha_iso)
         if fecha_iso:
             procesar_seleccion_fecha(telefono, f"FECHA_{fecha_iso}", datos_temp)
         else:

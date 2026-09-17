@@ -4,7 +4,7 @@ from services.whatsapp_service import (
     enviar_botones_interactivos, 
     enviar_lista_interactiva
 )
-from services.calendar_service import obtener_dias_disponibles, obtener_horas_disponibles, agendar_cita
+from services.calendar_service import obtener_dias_disponibles, obtener_horas_disponibles, agendar_cita, eliminar_evento
 from services.wompi_service import obtener_link_pago
 from config import PRECIO_VALORACION, PRECIO_PLAN_1, PRECIO_PLAN_2, PRECIO_PLAN_3
 
@@ -55,7 +55,6 @@ def procesar_seleccion_tipo(telefono, respuesta_id):
         pedir_ubicacion_bogota(telefono, datos_temp)
 
     elif respuesta_id == "TIPO_PLANES":
-        # 👈 NUEVO FLUJO: Muestra primero la modalidad Presencial / Virtual
         datos_temp = {
             "tipo_cita": "Control",
             "plan_nombre": "PLAN_1",
@@ -250,7 +249,7 @@ def procesar_seleccion_fecha(telefono, respuesta_id, datos_temp):
 
 def procesar_seleccion_hora(telefono, respuesta_id, datos_temp):
     """
-    Desempaqueta el ID de la hora y solicita el nombre completo.
+    Desempaqueta el ID de la hora. Si es reagendamiento, solicita confirmación final.
     """
     if not respuesta_id.startswith("HORA_"):
         enviar_mensaje_texto(telefono, "⚠️ Selecciona un horario válido.")
@@ -267,11 +266,63 @@ def procesar_seleccion_hora(telefono, respuesta_id, datos_temp):
     datos_temp["hora_iso"] = hora_iso
     datos_temp["hora_str"] = hora_str
     
+    # 👈 FLUJO DE REAGENDAMIENTO: Pedir confirmación final antes de borrar la cita anterior
+    if datos_temp.get("reagendando"):
+        database.guardar_estado_usuario(telefono, "CONFIRMANDO_REAGENDAMIENTO", datos_temp)
+        
+        texto = (
+            f"❓ *¿Deseas reconfirmar el reagendamiento de tu cita?*\n\n"
+            f"👤 *Paciente:* {datos_temp.get('paciente')}\n"
+            f"📋 *Servicio:* {datos_temp.get('tipo_cita')}\n"
+            f"📍 *Modalidad:* {datos_temp.get('modalidad')}\n"
+            f"📅 *Nueva Fecha:* {datos_temp.get('fecha_str')}\n"
+            f"⏰ *Nueva Hora:* {datos_temp.get('hora_str')}\n\n"
+            f"_Al reconfirmar, tu cita anterior quedará cancelada y se actualizará el nuevo horario._"
+        )
+        botones = [
+            ("CONFIRMAR_REAGENDO_SI", "✅ Sí, Confirmar"),
+            ("CONFIRMAR_REAGENDO_NO", "❌ No, Cancelar"),
+            ("BTN_ATRAS", "↩️ Cambiar Hora")
+        ]
+        enviar_botones_interactivos(telefono, texto, botones)
+        return
+
+    # Flujo estándar de agendamiento nuevo
     database.guardar_estado_usuario(telefono, "ESPERANDO_NOMBRE", datos_temp)
     
     botones = [("BTN_ATRAS", "↩️ Cambiar Hora")]
     texto = "✍️ Por favor, escribe el *Nombre Completo* del paciente que tomará la consulta:"
     enviar_botones_interactivos(telefono, texto, botones)
+
+
+def procesar_confirmacion_reagendamiento(telefono, respuesta_id, datos_temp):
+    """
+    Procesa la respuesta al reagendamiento:
+    - SI: Elimina evento anterior y registra la cita nueva con los mismos datos del paciente.
+    - NO: Cancela el reagendamiento y mantiene la cita original activa.
+    """
+    if respuesta_id == "CONFIRMAR_REAGENDO_SI":
+        event_id_previo = datos_temp.get("event_id_previo")
+        
+        # 1. Eliminar evento antiguo en Google Calendar si existía
+        if event_id_previo:
+            try:
+                eliminar_evento(event_id_previo)
+            except Exception as e:
+                print(f"[ERROR ELIMINAR EVENTO PREVIO] {e}")
+
+        # 2. Remover el registro antiguo de la base de datos
+        database.eliminar_cita_por_telefono(telefono)
+
+        # 3. Guardar el nuevo agendamiento manteniendo el nombre del paciente
+        paciente_nombre = datos_temp.get("paciente", "Paciente")
+        procesar_nombre_paciente(telefono, paciente_nombre, datos_temp)
+
+    elif respuesta_id in ["CONFIRMAR_REAGENDO_NO", "BTN_CANCELAR"]:
+        enviar_mensaje_texto(telefono, "🚫 *Reagendamiento cancelado.* Tu cita original se mantiene activa sin cambios.")
+        database.guardar_estado_usuario(telefono, "INICIO", {})
+    else:
+        enviar_mensaje_texto(telefono, "⚠️ Por favor, selecciona una opción válida usando los botones.")
 
 
 def procesar_nombre_paciente(telefono, nombre, datos_temp):
@@ -305,16 +356,28 @@ def procesar_nombre_paciente(telefono, nombre, datos_temp):
         }
         database.guardar_cita_pendiente(data_cita)
 
-        mensaje = (
-            f"✅ *Pre-reserva Virtual Registrada*\n\n"
-            f"👤 *Paciente:* {paciente_nombre}\n"
-            f"📋 *Servicio:* {tipo_cita}\n"
-            f"📅 *Fecha:* {datos_temp.get('fecha_str')}\n"
-            f"⏰ *Hora:* {datos_temp.get('hora_str')}\n"
-            f"💰 *Valor:* ${precio:,.0f} COP\n\n"
-            f"💳 *Para confirmar tu cita, realiza el pago aquí:*\n{link_pago}\n\n"
-            f"_Una vez confirmado el pago, se agendará automáticamente tu espacio en el calendario y recibirás el enlace de Google Meet._"
-        )
+        # Si viene de un reagendamiento exitoso
+        if datos_temp.get("reagendando"):
+            mensaje = (
+                f"✅ *Cita Virtual Reagendada Exitosamente*\n\n"
+                f"👤 *Paciente:* {paciente_nombre}\n"
+                f"📋 *Servicio:* {tipo_cita}\n"
+                f"📅 *Nueva Fecha:* {datos_temp.get('fecha_str')}\n"
+                f"⏰ *Nueva Hora:* {datos_temp.get('hora_str')}\n\n"
+                f"_Se ha actualizado tu información. Si ya habías pagado, tu pago cubrirá esta nueva fecha._"
+            )
+        else:
+            mensaje = (
+                f"✅ *Pre-reserva Virtual Registrada*\n\n"
+                f"👤 *Paciente:* {paciente_nombre}\n"
+                f"📋 *Servicio:* {tipo_cita}\n"
+                f"📅 *Fecha:* {datos_temp.get('fecha_str')}\n"
+                f"⏰ *Hora:* {datos_temp.get('hora_str')}\n"
+                f"💰 *Valor:* ${precio:,.0f} COP\n\n"
+                f"💳 *Para confirmar tu cita, realiza el pago aquí:*\n{link_pago}\n\n"
+                f"_Una vez confirmado el pago, se agendará automáticamente tu espacio en el calendario y recibirás el enlace de Google Meet._"
+            )
+        
         enviar_mensaje_texto(telefono, mensaje)
         database.guardar_estado_usuario(telefono, "INICIO", {})
 
@@ -361,14 +424,25 @@ def procesar_nombre_paciente(telefono, nombre, datos_temp):
             database.guardar_cita_pendiente(data_cita)
             database.confirmar_cita_pagada(telefono, event_id, meet_link)
 
-            mensaje = (
-                f"✅ *Cita Presencial Agendada Exitosamente*\n\n"
-                f"👤 *Paciente:* {paciente_nombre}\n"
-                f"📋 *Servicio:* {tipo_cita}\n"
-                f"📅 *Fecha:* {datos_temp.get('fecha_str')}\n"
-                f"⏰ *Hora:* {datos_temp.get('hora_str')}\n"
-                f"📍 *Lugar:* Consultorio Médico Bogotá\n\n"
-                f"⚠️ *Importante:* Recuerda cancelar el valor de ${precio:,.0f} COP en efectivo directamente en la recepción antes de ingresar a tu consulta."
-            )
+            if datos_temp.get("reagendando"):
+                mensaje = (
+                    f"✅ *Cita Presencial Reagendada Exitosamente*\n\n"
+                    f"👤 *Paciente:* {paciente_nombre}\n"
+                    f"📋 *Servicio:* {tipo_cita}\n"
+                    f"📅 *Nueva Fecha:* {datos_temp.get('fecha_str')}\n"
+                    f"⏰ *Nueva Hora:* {datos_temp.get('hora_str')}\n"
+                    f"📍 *Lugar:* Consultorio Médico Bogotá"
+                )
+            else:
+                mensaje = (
+                    f"✅ *Cita Presencial Agendada Exitosamente*\n\n"
+                    f"👤 *Paciente:* {paciente_nombre}\n"
+                    f"📋 *Servicio:* {tipo_cita}\n"
+                    f"📅 *Fecha:* {datos_temp.get('fecha_str')}\n"
+                    f"⏰ *Hora:* {datos_temp.get('hora_str')}\n"
+                    f"📍 *Lugar:* Consultorio Médico Bogotá\n\n"
+                    f"⚠️ *Importante:* Recuerda cancelar el valor de ${precio:,.0f} COP en efectivo directamente en la recepción antes de ingresar a tu consulta."
+                )
+            
             enviar_mensaje_texto(telefono, mensaje)
             database.guardar_estado_usuario(telefono, "INICIO", {})
