@@ -1,7 +1,10 @@
 import sqlite3
 import json
+from datetime import datetime
+import zoneinfo
 
 DB_NAME = "database.db"
+ZONA_HORARIA = zoneinfo.ZoneInfo("America/Bogota")
 
 def get_connection():
     conn = sqlite3.connect(DB_NAME)
@@ -56,18 +59,20 @@ def init_db():
 # --- GESTIÓN DE ESTADOS DE USUARIOS ---
 
 def guardar_estado_usuario(telefono, estado, datos_temp=None):
+    tel_limpio = str(telefono).replace("+", "").strip()
     if datos_temp is None:
         datos_temp = {}
     with get_connection() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO usuarios (telefono, estado, datos_temp) VALUES (?, ?, ?)",
-            (telefono, estado, json.dumps(datos_temp))
+            (tel_limpio, estado, json.dumps(datos_temp))
         )
         conn.commit()
 
 def obtener_estado_usuario(telefono):
+    tel_limpio = str(telefono).replace("+", "").strip()
     with get_connection() as conn:
-        row = conn.execute("SELECT estado, datos_temp FROM usuarios WHERE telefono = ?", (telefono,)).fetchone()
+        row = conn.execute("SELECT estado, datos_temp FROM usuarios WHERE telefono = ?", (tel_limpio,)).fetchone()
         if row:
             return row["estado"], json.loads(row["datos_temp"] or "{}")
         return "INICIO", {}
@@ -75,6 +80,7 @@ def obtener_estado_usuario(telefono):
 # --- GESTIÓN DE CITAS ---
 
 def guardar_cita_pendiente(data):
+    tel_limpio = str(data['telefono']).replace("+", "").strip()
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
@@ -84,7 +90,7 @@ def guardar_cita_pendiente(data):
                 estado, plan_nombre, citas_restantes, event_id, meet_link
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            data['telefono'], data['paciente'], data['tipo_cita'], data['modalidad'],
+            tel_limpio, data['paciente'], data['tipo_cita'], data['modalidad'],
             data['fecha_iso'], data['fecha_str'], data['hora_iso'], data['hora_str'],
             data.get('estado', 'PENDIENTE_PAGO'), data.get('plan_nombre'), 
             data.get('citas_restantes', 1), data.get('event_id'), data.get('meet_link')
@@ -93,31 +99,55 @@ def guardar_cita_pendiente(data):
 
 def obtener_cita_activa(telefono):
     """
-    Retorna la última cita confirmada/pagada.
-    Se ignoran explícitamente las pre-reservas sin pagar (PENDIENTE_PAGO).
+    Retorna la cita únicamente si sigue VIGENTE en fecha y hora.
+    Si la cita ya ocurrió, se considera vencida y retorna None (libera el agendamiento).
     """
+    tel_limpio = str(telefono).replace("+", "").strip()
+    tel_con_mas = f"+{tel_limpio}"
+    ahora = datetime.now(ZONA_HORARIA)
+
     with get_connection() as conn:
-        row = conn.execute(
-            "SELECT * FROM citas WHERE telefono = ? AND estado IN ('PAGADO', 'AGENDADO_MANUAL') ORDER BY id DESC LIMIT 1",
-            (telefono,)
-        ).fetchone()
-        return dict(row) if row else None
+        rows = conn.execute(
+            """
+            SELECT * FROM citas 
+            WHERE (telefono = ? OR telefono = ?) 
+              AND estado IN ('PAGADO', 'AGENDADO_MANUAL') 
+            ORDER BY id DESC
+            """,
+            (tel_limpio, tel_con_mas)
+        ).fetchall()
+
+        for row in rows:
+            cita = dict(row)
+            try:
+                # Comprobar la vigencia comparando con la fecha/hora actual de Bogotá
+                fecha_hora_str = f"{cita['fecha_iso']} {cita['hora_iso']}"
+                fecha_hora_cita = datetime.strptime(fecha_hora_str, "%Y-%m-%d %H:%M").replace(tzinfo=ZONA_HORARIA)
+
+                if fecha_hora_cita >= ahora:
+                    return cita  # Cita futura/activa encontrada
+            except Exception:
+                return cita
+
+    return None
 
 def obtener_cita_pendiente(telefono):
+    tel_limpio = str(telefono).replace("+", "").strip()
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM citas WHERE telefono = ? AND estado = 'PENDIENTE_PAGO' ORDER BY id DESC LIMIT 1",
-            (telefono,)
+            "SELECT * FROM citas WHERE (telefono = ? OR telefono = ?) AND estado = 'PENDIENTE_PAGO' ORDER BY id DESC LIMIT 1",
+            (tel_limpio, f"+{tel_limpio}")
         ).fetchone()
         return dict(row) if row else None
 
 def confirmar_cita_pagada(telefono, event_id, meet_link=None):
+    tel_limpio = str(telefono).replace("+", "").strip()
     with get_connection() as conn:
         conn.execute("""
             UPDATE citas 
             SET estado = 'PAGADO', event_id = ?, meet_link = ? 
-            WHERE telefono = ? AND estado = 'PENDIENTE_PAGO'
-        """, (event_id, meet_link, telefono))
+            WHERE (telefono = ? OR telefono = ?) AND estado = 'PENDIENTE_PAGO'
+        """, (event_id, meet_link, tel_limpio, f"+{tel_limpio}"))
         conn.commit()
 
 def actualizar_evento_cita(cita_id, fecha_iso, fecha_str, hora_iso, hora_str, event_id, meet_link=None):
@@ -130,13 +160,15 @@ def actualizar_evento_cita(cita_id, fecha_iso, fecha_str, hora_iso, hora_str, ev
         conn.commit()
 
 def eliminar_cita_por_telefono(telefono):
-    """
-    Busca la cita activa para recuperar su event_id y eliminar sus registros de la BD.
-    """
+    tel_limpio = str(telefono).replace("+", "").strip()
     with get_connection() as conn:
-        row = conn.execute("SELECT event_id FROM citas WHERE telefono = ? AND estado IN ('PAGADO', 'AGENDADO_MANUAL')", (telefono,)).fetchone()
+        row = conn.execute(
+            "SELECT event_id FROM citas WHERE (telefono = ? OR telefono = ?) AND estado IN ('PAGADO', 'AGENDADO_MANUAL')", 
+            (tel_limpio, f"+{tel_limpio}")
+        ).fetchone()
+        
         event_id = row["event_id"] if row else None
-        conn.execute("DELETE FROM citas WHERE telefono = ?", (telefono,))
+        conn.execute("DELETE FROM citas WHERE telefono = ? OR telefono = ?", (tel_limpio, f"+{tel_limpio}"))
         conn.commit()
         return event_id
 

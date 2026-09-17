@@ -24,12 +24,14 @@ def recibir_mensaje(telefono, texto, interactive_id=None):
     manejando el menú de bienvenida, consulta, reagendamiento, cancelación,
     navegación hacia atrás y la máquina de estados.
     """
-    estado, datos_temp = database.obtener_estado_usuario(telefono)
+    telefono_limpio = str(telefono).replace("+", "").strip()
+    
+    estado, datos_temp = database.obtener_estado_usuario(telefono_limpio)
     texto_limpio = texto.strip().lower() if texto else ""
 
     # Comando universal para reiniciar conversación desde cualquier punto
     if texto_limpio in ['0', 'cancelar todo', 'inicio', 'menu', 'reiniciar']:
-        mostrar_menu_principal(telefono, "🔄 Proceso reiniciado. ¿En qué puedo ayudarte?")
+        mostrar_menu_principal(telefono_limpio, "🔄 Proceso reiniciado. ¿En qué puedo ayudarte?")
         return
 
     # Determinamos el ID interactivo si proviene de botón o lista, de lo contrario usamos texto
@@ -37,19 +39,34 @@ def recibir_mensaje(telefono, texto, interactive_id=None):
 
     # --- MANEJO CENTRAL DE RETROCESO (BTN_ATRAS / ATRAS) ---
     if payload_id in ['BTN_ATRAS', 'atras', 'atrás', 'volver', 'regresar', '00']:
-        retroceder_estado(telefono, estado, datos_temp)
+        retroceder_estado(telefono_limpio, estado, datos_temp)
         return
 
     # --- 1. MENÚ PRINCIPAL (Estado INICIO) ---
     if estado == 'INICIO':
         # Opcion 1: AGENDAR
         if payload_id in ['BTN_AGENDAR', '1', 'agendar', 'agendar cita']:
-            iniciar_agendamiento(telefono)
+            cita_activa = database.obtener_cita_activa(telefono_limpio)
+            
+            # ⛔ BLOQUEO SI TIENE CITA VIGENTE
+            if cita_activa:
+                msg = (
+                    f"⚠️ *Ya tienes una cita programada activa:*\n\n"
+                    f"👤 *Paciente:* {cita_activa['paciente']}\n"
+                    f"📅 *Fecha:* {cita_activa['fecha_str']}\n"
+                    f"⏰ *Hora:* {cita_activa['hora_str']}\n\n"
+                    f"No puedes agendar una nueva cita mientras tengas una vigente. "
+                    f"Si necesitas cambiar la fecha, selecciona *Reagendar Cita*."
+                )
+                enviar_mensaje_texto(telefono_limpio, msg)
+                return
+
+            iniciar_agendamiento(telefono_limpio)
             return
 
         # Opcion 2: CONSULTAR CITA
         elif payload_id in ['BTN_CONSULTAR', '2', 'consultar', 'mis citas', 'consultar cita']:
-            cita = database.obtener_cita_activa(telefono)
+            cita = database.obtener_cita_activa(telefono_limpio)
             if cita:
                 texto_meet = f"\n💻 *Enlace a la Videollamada:*\n{cita['meet_link']}\n" if cita.get('meet_link') else ""
                 msg = (
@@ -63,12 +80,12 @@ def recibir_mensaje(telefono, texto, interactive_id=None):
                 )
             else:
                 msg = "❌ No tienes ninguna cita activa o pagada registrada actualmente."
-            enviar_mensaje_texto(telefono, msg)
+            enviar_mensaje_texto(telefono_limpio, msg)
             return
 
         # Opcion 3: REAGENDAR CITA (Preserva cita hasta confirmar)
         elif payload_id in ['BTN_REAGENDAR', '3', 'reagendar', 'reagendar cita']:
-            cita = database.obtener_cita_activa(telefono)
+            cita = database.obtener_cita_activa(telefono_limpio)
             if cita:
                 datos_reagendo = {
                     "reagendando": True,
@@ -81,64 +98,64 @@ def recibir_mensaje(telefono, texto, interactive_id=None):
                     "citas_restantes": cita.get("citas_restantes", 1)
                 }
                 
-                enviar_mensaje_texto(telefono, "🔄 Vamos a reagendar tu cita. Mantendremos la modalidad e información del paciente.")
-                mostrar_dias_disponibles(telefono, datos_reagendo)
+                enviar_mensaje_texto(telefono_limpio, "🔄 Vamos a reagendar tu cita. Mantendremos la modalidad e información del paciente.")
+                mostrar_dias_disponibles(telefono_limpio, datos_reagendo)
             else:
-                enviar_mensaje_texto(telefono, "❌ No tienes citas activas para reagendar. Puedes agendar una cita nueva.")
+                enviar_mensaje_texto(telefono_limpio, "❌ No tienes citas activas para reagendar. Puedes agendar una cita nueva.")
             return
 
         # Opcion 4: CANCELAR CITA
         elif payload_id in ['BTN_CANCELAR', '4', 'cancelar', 'cancelar cita']:
-            event_id = database.eliminar_cita_por_telefono(telefono)
+            event_id = database.eliminar_cita_por_telefono(telefono_limpio)
             if event_id:
                 eliminar_evento(event_id)
-                enviar_mensaje_texto(telefono, "✅ Tu cita ha sido cancelada exitosamente y el horario fue liberado en el calendario.")
+                enviar_mensaje_texto(telefono_limpio, "✅ Tu cita ha sido cancelada exitosamente y el horario fue liberado en el calendario.")
             else:
-                enviar_mensaje_texto(telefono, "❌ No encontramos ninguna cita activa registrada para cancelar.")
+                enviar_mensaje_texto(telefono_limpio, "❌ No encontramos ninguna cita activa registrada para cancelar.")
             return
 
     # --- 2. MÁQUINA DE ESTADOS (CONTROLLER) ---
     if estado == 'SELECCIONANDO_TIPO':
-        procesar_seleccion_tipo(telefono, payload_id)
+        procesar_seleccion_tipo(telefono_limpio, payload_id)
         return
 
     elif estado == 'SELECCIONANDO_PLAN':
-        procesar_seleccion_plan(telefono, payload_id, datos_temp)
+        procesar_seleccion_plan(telefono_limpio, payload_id, datos_temp)
         return
 
     elif estado == 'SELECCIONANDO_BOGOTA':
-        procesar_seleccion_ubicacion(telefono, payload_id, datos_temp)
+        procesar_seleccion_ubicacion(telefono_limpio, payload_id, datos_temp)
         return
 
     elif estado == 'SELECCIONANDO_MODALIDAD':
-        procesar_seleccion_modalidad(telefono, payload_id, datos_temp)
+        procesar_seleccion_modalidad(telefono_limpio, payload_id, datos_temp)
         return
 
     elif estado == 'SELECCIONANDO_FECHA':
-        procesar_seleccion_fecha(telefono, payload_id, datos_temp)
+        procesar_seleccion_fecha(telefono_limpio, payload_id, datos_temp)
         return
 
     elif estado == 'SELECCIONANDO_HORA':
-        procesar_seleccion_hora(telefono, payload_id, datos_temp)
+        procesar_seleccion_hora(telefono_limpio, payload_id, datos_temp)
         return
 
     elif estado == 'CONFIRMANDO_REAGENDAMIENTO':
-        procesar_confirmacion_reagendamiento(telefono, payload_id, datos_temp)
+        procesar_confirmacion_reagendamiento(telefono_limpio, payload_id, datos_temp)
         return
 
     elif estado == 'ESPERANDO_NOMBRE':
-        procesar_nombre_paciente(telefono, texto, datos_temp)
+        procesar_nombre_paciente(telefono_limpio, texto, datos_temp)
         return
 
     # --- 3. PROCESADOR SECUNDARIO (Respuestas frecuentes / Legacy) ---
     if hasattr(procesador, 'procesar_mensaje_usuario'):
-        respuesta_legacy = procesador.procesar_mensaje_usuario(telefono, texto)
+        respuesta_legacy = procesador.procesar_mensaje_usuario(telefono_limpio, texto)
         if respuesta_legacy:
-            enviar_mensaje_texto(telefono, respuesta_legacy)
+            enviar_mensaje_texto(telefono_limpio, respuesta_legacy)
             return
 
     # --- 4. MENÚ POR DEFECTO (Si no coincide con nada) ---
-    mostrar_menu_principal(telefono)
+    mostrar_menu_principal(telefono_limpio)
 
 
 def retroceder_estado(telefono, estado_actual, datos_temp):

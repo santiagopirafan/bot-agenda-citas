@@ -316,6 +316,7 @@ def procesar_confirmacion_reagendamiento(telefono, respuesta_id, datos_temp):
 
         # 3. Guardar el nuevo agendamiento manteniendo el nombre del paciente
         paciente_nombre = datos_temp.get("paciente", "Paciente")
+        datos_temp["reagendando"] = True
         procesar_nombre_paciente(telefono, paciente_nombre, datos_temp)
 
     elif respuesta_id in ["CONFIRMAR_REAGENDO_NO", "BTN_CANCELAR"]:
